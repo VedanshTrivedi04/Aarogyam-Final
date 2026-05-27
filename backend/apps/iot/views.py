@@ -696,7 +696,8 @@ class DispenserCompartmentSetupView(APIView):
     """
     POST /api/v1/iot/devices/<pk>/dispenser/setup/
     Create/reset the 4 physical compartments for a device (idempotent).
-    Call once after device link; safe to call again to reset.
+    Optionally pass custom times:
+      { "times": { "morning_before": "07:30", "night_before": "21:00" } }
     """
     permission_classes = [IsAuthenticated]
 
@@ -710,23 +711,93 @@ class DispenserCompartmentSetupView(APIView):
     def post(self, request, pk):
         device = get_object_or_404(Device, id=pk, user=request.user)
 
+        # Optional custom times: { "morning_before": "07:30", ... }
+        custom_times = request.data.get('times', {})
+
         compartments = []
         for num, slot in self._SLOTS:
-            comp, _ = PhysicalCompartment.objects.get_or_create(
+            default_time = PhysicalCompartment.SLOT_DEFAULT_TIMES.get(slot, '08:00')
+            scheduled_time = custom_times.get(slot, default_time)
+
+            # Validate HH:MM format
+            try:
+                h, m = map(int, scheduled_time.split(':'))
+                if not (0 <= h <= 23 and 0 <= m <= 59):
+                    raise ValueError
+                scheduled_time = f'{h:02d}:{m:02d}'
+            except Exception:
+                scheduled_time = default_time
+
+            comp, created = PhysicalCompartment.objects.get_or_create(
                 device=device,
                 compartment_number=num,
-                defaults={'time_slot': slot},
+                defaults={'time_slot': slot, 'scheduled_time': scheduled_time},
             )
-            # Always ensure time_slot is correct even if record existed
+            update_fields = []
             if comp.time_slot != slot:
                 comp.time_slot = slot
-                comp.save(update_fields=['time_slot'])
+                update_fields.append('time_slot')
+            # Only overwrite time if caller explicitly passed a custom time
+            if slot in custom_times and comp.scheduled_time != scheduled_time:
+                comp.scheduled_time = scheduled_time
+                update_fields.append('scheduled_time')
+            if update_fields:
+                comp.save(update_fields=update_fields)
             compartments.append(comp)
 
         return APIResponse.success(
             PhysicalCompartmentListSerializer(compartments, many=True).data,
             status=201,
         )
+
+
+class DispenserUpdateSlotTimeView(APIView):
+    """
+    PATCH /api/v1/iot/devices/<pk>/dispenser/compartments/<compartment_num>/time/
+    Caregiver can update the scheduled alarm time for any compartment at any time.
+    Body: { "scheduled_time": "07:30" }   (24h HH:MM)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk, compartment_num):
+        device = get_object_or_404(Device, id=pk, user=request.user)
+        comp = get_object_or_404(
+            PhysicalCompartment, device=device, compartment_number=compartment_num
+        )
+        time_str = request.data.get('scheduled_time', '').strip()
+        if not time_str:
+            return APIResponse.error('scheduled_time is required (HH:MM format)', status=400)
+        try:
+            h, m = map(int, time_str.split(':'))
+            if not (0 <= h <= 23 and 0 <= m <= 59):
+                raise ValueError
+            time_str = f'{h:02d}:{m:02d}'
+        except Exception:
+            return APIResponse.error('Invalid time format. Use HH:MM (24h), e.g. "07:30"', status=400)
+
+        comp.scheduled_time = time_str
+        comp.save(update_fields=['scheduled_time'])
+
+        # Notify device to re-sync schedule
+        DeviceCommand.objects.create(
+            device=device,
+            command_type='SYNC_SCHEDULE',
+            payload={
+                'reason': 'slot_time_updated',
+                'compartment': compartment_num,
+                'new_time': time_str,
+                'time_slot': comp.time_slot,
+            },
+            issued_by=request.user,
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        return APIResponse.success({
+            'compartment_number': comp.compartment_number,
+            'time_slot': comp.time_slot,
+            'scheduled_time': comp.scheduled_time,
+            'message': f'Alarm time updated to {time_str}. Device will sync on next poll.',
+        })
 
 
 class DispenserCompartmentListView(APIView):
@@ -795,6 +866,53 @@ class DispenserAddMedicineView(APIView):
             ai_analysis_data={'source': 'load_cell_pending'},
             instructions=instructions,
         )
+
+        # If this device is linked to a patient, create a prescription + schedule
+        try:
+            patient = device.linked_patient
+            if patient:
+                from apps.clinical.models import Medication, Prescription, MedicationSchedule
+                from apps.clinical.services import PrescriptionService
+                from apps.scheduling.services import ScheduleGenerationService
+                # Find or create medication entry (best-effort)
+                med, _ = Medication.objects.get_or_create(name__iexact=medicine_name, defaults={'name': medicine_name})
+
+                # Build minimal prescription data — mark indefinite so end_date isn't required
+                prescription_data = {
+                    'medication': med,
+                    'dosage_value': qty,
+                    'dosage_unit': getattr(med, 'default_unit', 'tablet') or 'tablet',
+                    'start_date': timezone.now().date(),
+                    'is_indefinite': True,
+                    'compartment_number': compartment_num,
+                }
+
+                try:
+                    prescription = PrescriptionService.create(patient, prescription_data)
+
+                    # Use the compartment's customisable scheduled_time (not hardcoded)
+                    time_str = compartment.scheduled_time or compartment.SLOT_DEFAULT_TIMES.get(compartment.time_slot, '08:00')
+
+                    schedule = MedicationSchedule.objects.create(
+                        prescription=prescription,
+                        frequency_type='DAILY',
+                        times_of_day=[{'time': time_str, 'dose': qty, 'with_food': False, 'label': ''}],
+                        days_of_week=list(range(7)),
+                        timezone=getattr(patient, 'timezone', 'Asia/Kolkata') or 'Asia/Kolkata',
+                    )
+
+                    try:
+                        ScheduleGenerationService.generate_upcoming_reminders(schedule, days=2)
+                    except Exception:
+                        # non-critical — continue
+                        pass
+
+                except Exception:
+                    # swallow errors to avoid breaking dispenser flow
+                    logger.exception('Failed to create prescription/schedule from dispenser add')
+        except Exception:
+            # Non-fatal — don't block the API call
+            pass
 
         # Notify device about new medicine so it syncs its schedule immediately
         DeviceCommand.objects.create(
@@ -1070,18 +1188,65 @@ class DispenserCurrentScheduleView(APIView):
             return APIResponse.error("Forbidden", status=403)
 
         from .ai_service import generate_voice_text, generate_display_text
+        from .weight_service import calculate_dose_expected_reduction
+        import datetime as dt
+        import pytz
 
-        now = timezone.localtime()
-        current_hm = now.strftime('%H:%M')
+        # ── Always use IST for time comparisons ──────────────────────────────
+        # TIME_ZONE='UTC' in settings, but caregivers set scheduled_time in IST.
+        # So we always compare against IST wall-clock time.
+        IST = pytz.timezone('Asia/Kolkata')
+        now_utc = timezone.now()                     # UTC-aware
+        now = now_utc.astimezone(IST)                # IST-aware
+        now_utc_naive = now_utc                      # for DB filter (Django stores in UTC)
 
-        # Find which slot matches within ±10 minutes
+        # ── Priority 1: Manual trigger ("Take Medicine Now") ─────────────────
+        # DoseSession created in last 30 min → return immediately at any time.
+        manual_session = (
+            DoseSession.objects
+            .filter(
+                compartment__device=device,
+                dose_status='pending',
+                created_at__gte=now_utc_naive - dt.timedelta(minutes=30),
+            )
+            .select_related('compartment')
+            .prefetch_related('compartment__sub_compartments')
+            .order_by('-created_at')
+            .first()
+        )
+
+        if manual_session:
+            comp = manual_session.compartment
+            active_subs = comp.sub_compartments.filter(is_active=True)
+            return APIResponse.success({
+                'has_dose': True,
+                'compartment_number': comp.compartment_number,
+                'time_slot': comp.time_slot,
+                'voice_text': generate_voice_text(comp.time_slot, active_subs),
+                'display_text': generate_display_text(comp.time_slot, active_subs),
+                'expected_weight_before': comp.current_balance_weight_grams,
+                'session_id': str(manual_session.id),
+                'server_time': now.isoformat(),
+                'trigger': 'manual',
+            })
+
+        # ── Priority 2: DB-driven time-window check (IST) ────────────────────
+        # scheduled_time is stored as HH:MM in IST (caregiver's local time).
+        # Compare against current IST wall-clock — ±10 min window.
         active_slot = None
-        for slot, slot_time in self._SLOT_TIMES.items():
-            sh, sm = map(int, slot_time.split(':'))
+        matched_comp = None
+        all_comps = PhysicalCompartment.objects.filter(
+            device=device, is_active=True
+        ).prefetch_related('sub_compartments')
+
+        for c in all_comps:
+            sh, sm = c.get_scheduled_hour_minute()
+            # Build slot time in IST
             slot_dt = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
             diff_secs = abs((now - slot_dt).total_seconds())
-            if diff_secs <= 600:       # 10-minute window
-                active_slot = slot
+            if diff_secs <= 600:        # ±10-minute window
+                active_slot = c.time_slot
+                matched_comp = c
                 break
 
         if not active_slot:
@@ -1089,27 +1254,18 @@ class DispenserCurrentScheduleView(APIView):
                 'has_dose': False,
                 'message': 'No dose scheduled for current time.',
                 'server_time': now.isoformat(),
+                'server_time_ist': now.strftime('%H:%M IST'),
             })
 
-        comp = PhysicalCompartment.objects.filter(
-            device=device, time_slot=active_slot, is_active=True
-        ).prefetch_related('sub_compartments').first()
-
-        if not comp:
-            return APIResponse.success({'has_dose': False, 'message': 'Compartment not set up.'})
-
+        comp = matched_comp
         active_subs = comp.sub_compartments.filter(is_active=True)
 
         voice_text = generate_voice_text(active_slot, active_subs)
         display_text = generate_display_text(active_slot, active_subs)
 
         # Create DoseSession if one doesn't exist for this slot today
-        from .weight_service import calculate_dose_expected_reduction
-        slot_dt = now.replace(
-            hour=int(self._SLOT_TIMES[active_slot].split(':')[0]),
-            minute=int(self._SLOT_TIMES[active_slot].split(':')[1]),
-            second=0, microsecond=0,
-        )
+        sh, sm = comp.get_scheduled_hour_minute()
+        slot_dt = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
         session, created = DoseSession.objects.get_or_create(
             compartment=comp,
             scheduled_time__date=now.date(),
@@ -1130,7 +1286,10 @@ class DispenserCurrentScheduleView(APIView):
             'expected_weight_before': comp.current_balance_weight_grams,
             'session_id': str(session.id),
             'server_time': now.isoformat(),
+            'trigger': 'scheduled',
         })
+
+
 
 
 # ──────────────────────────────────────────────────────────────────

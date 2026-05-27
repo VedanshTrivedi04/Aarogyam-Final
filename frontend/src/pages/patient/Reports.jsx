@@ -82,17 +82,21 @@ export default function Reports({ patientId = null }) {
     setIsExporting(true);
     try {
       const res = await exportReport({ days, format: 'pdf' });
-      const blob = new Blob([res.data], { type: res.headers['content-type'] || 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
+      // res is the full axios response; res.data is already the Blob
+      const contentType = res.headers?.['content-type'] || 'application/pdf';
+      const blob = new Blob([res.data], { type: contentType });
+      const objectUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
+      a.href = objectUrl;
       a.download = `adherence_report_${days}d.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(objectUrl);
     } catch (error) {
-      alert(error?.message || 'Failed to export report.');
+      // useExportAdherenceReport now correctly parses blob errors and throws
+      // a plain Error with a human-readable message.
+      alert(error?.message || 'Export failed. Please try again.');
     } finally {
       setIsExporting(false);
     }

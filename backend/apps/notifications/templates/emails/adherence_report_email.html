@@ -1,0 +1,27 @@
+{% extends "emails/base_email.html" %}
+
+{% block subject %}Medication Adherence Report - Aarogyam{% endblock %}
+
+{% block content %}
+<h2 style="margin-top:0;font-size:20px;font-weight:700;color:#0f172a;letter-spacing:-0.2px;">
+  Medication Adherence Report
+</h2>
+
+<p style="font-size:15px;line-height:1.6;color:#334155;margin-bottom:20px;">
+  Hello,
+</p>
+
+<p style="font-size:15px;line-height:1.6;color:#334155;margin-bottom:20px;">
+  Please find attached the medication adherence report for <strong>{{ patient_name }}</strong>. 
+  This report covers the last <strong>{{ days }} days</strong> ({{ date_range }}).
+</p>
+
+<p style="font-size:15px;line-height:1.6;color:#334155;margin-bottom:20px;">
+  Reviewing this report regularly can help track medication habits and ensure better health outcomes. If you notice any missed doses or irregularities, please consult with your healthcare provider.
+</p>
+
+<p style="font-size:15px;line-height:1.6;color:#334155;margin-bottom:0;">
+  Stay healthy,<br/>
+  <strong style="color:#0B6E7A;">The Aarogyam Team</strong>
+</p>
+{% endblock %}

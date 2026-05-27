@@ -268,3 +268,108 @@ class ManualDoseView(APIView):
             source=s.validated_data.get('source', 'APP'),
         )
         return APIResponse.created(DoseLogSerializer(log).data, message='Manual dose recorded.')
+
+
+class DispenseNowView(APIView):
+    """POST /api/v1/reminders/{id}/dispense-now/ — Trigger immediate dispense on device."""
+    permission_classes = [IsAuthenticated, IsPatient]
+
+    def post(self, request, reminder_id):
+        import datetime as dt
+        patient = get_patient_or_404(request.user)
+        job = get_object_or_404(
+            ReminderJob,
+            id=reminder_id,
+            schedule__prescription__patient=patient,
+        )
+
+        from apps.iot.models import (
+            Device, DeviceCommand, DeviceCompartmentMapping,
+            PhysicalCompartment, DoseSession,
+        )
+        from apps.iot.weight_service import calculate_dose_expected_reduction
+
+        # ── 1. Find the patient's active device ──────────────────────────────
+        device = (
+            Device.objects.filter(linked_patient=patient, is_active=True).first()
+            or Device.objects.filter(user=request.user, is_active=True).first()
+        )
+        if not device:
+            return APIResponse.error('No linked device found.', status=400)
+
+        # ── 2. Resolve compartment number ────────────────────────────────────
+        rx = job.schedule.prescription
+        compartment_num = getattr(rx, 'compartment_number', None)
+
+        # Fall back to old DeviceCompartmentMapping if prescription has no compartment_number
+        if not compartment_num:
+            mapping = DeviceCompartmentMapping.objects.filter(
+                device=device,
+                prescription=rx,
+            ).first()
+            if mapping:
+                compartment_num = mapping.compartment_number
+
+        if not compartment_num:
+            return APIResponse.error(
+                'Medication is not assigned to any compartment on the device. '
+                'Ask your caregiver to complete the dispenser setup.',
+                status=400,
+            )
+
+        # ── 3. Find the PhysicalCompartment (new IoT system) ─────────────────
+        phys_comp = PhysicalCompartment.objects.filter(
+            device=device,
+            compartment_number=compartment_num,
+            is_active=True,
+        ).prefetch_related('sub_compartments').first()
+
+        if not phys_comp:
+            return APIResponse.error(
+                f'Physical compartment {compartment_num} is not set up on this device. '
+                'Ask your caregiver to complete the dispenser setup.',
+                status=400,
+            )
+
+        # ── 4. Create (or reuse) a pending DoseSession ───────────────────────
+        #  This is what makes GET .../schedule/current/ return has_dose: true
+        #  immediately — even outside the normal ±10-minute slot window.
+        now = timezone.now()
+        active_subs = phys_comp.sub_compartments.filter(is_active=True)
+
+        session, _ = DoseSession.objects.get_or_create(
+            compartment=phys_comp,
+            dose_status='pending',
+            defaults={
+                'scheduled_time': now,
+                'expected_weight_before': phys_comp.current_balance_weight_grams,
+                'weight_reduction_expected': calculate_dose_expected_reduction(active_subs),
+            },
+        )
+
+        # ── 5. Queue OPEN_GATE command → ESP32 physically opens the lid ──────
+        try:
+            cmd = DeviceCommand.objects.create(
+                device=device,
+                command_type='OPEN_GATE',
+                payload={
+                    'compartment': compartment_num,
+                    'session_id': str(session.id),
+                    'scheduled_at': now.isoformat(),
+                    'reason': 'manual_take_now',
+                },
+                issued_by=request.user,
+                expires_at=now + dt.timedelta(minutes=10),
+            )
+            return APIResponse.success(
+                {
+                    'command_id': str(cmd.id),
+                    'compartment': compartment_num,
+                    'session_id': str(session.id),
+                },
+                message='Command sent to dispenser. Please bring your hand near the sensor.',
+            )
+        except Exception as e:
+            logger.error(f'Failed to queue manual dispense for reminder {reminder_id}: {e}')
+            return APIResponse.error('Failed to send command to device.', status=500)
+

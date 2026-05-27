@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
 
 // Extract only origin (strips /api/v1 or any path suffix from VITE_API_URL)
-const _apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const _apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const WS_BASE = new URL(_apiUrl).origin.replace(/^http/, 'ws');
 
 const ICE_SERVERS = [

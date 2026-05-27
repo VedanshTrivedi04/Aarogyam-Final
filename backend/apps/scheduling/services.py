@@ -69,19 +69,6 @@ class ScheduleGenerationService:
                 if utc_dt in existing or utc_dt < now_utc:
                     continue
 
-                ReminderJob.objects.get_or_create(
-                    schedule=schedule,
-                    scheduled_at=utc_dt,
-                    defaults={
-                        'window_start': utc_dt - timedelta(minutes=schedule.lead_minutes),
-                        'window_end':   utc_dt + timedelta(minutes=60),
-                        'dose_value':   Decimal(str(slot.get('dose', rx.dosage_value))),
-                        'dose_unit':    rx.dosage_unit,
-                        'with_food':    slot.get('with_food', rx.medication.requires_food),
-                        'label':        slot.get('label', ''),
-                        'status':       'PENDING',
-                    }
-                )
                 job, was_created = ReminderJob.objects.get_or_create(
                     schedule=schedule,
                     scheduled_at=utc_dt,

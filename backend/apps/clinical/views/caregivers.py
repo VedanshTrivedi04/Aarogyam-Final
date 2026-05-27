@@ -779,6 +779,27 @@ class CaregiverPatientPrescriptionsView(APIView):
 
         return APIResponse.created(response_data)
 
+    def delete(self, request, patient_id, prescription_id):
+        """DELETE /api/v1/caregivers/patients/{id}/prescriptions/{prescription_id}/"""
+        caregiver = get_caregiver_or_404(request.user)
+        link = get_object_or_404(
+            PatientCaregiverLink, patient__id=patient_id, caregiver=caregiver, is_active=True
+        )
+        if link.permission_level != PermissionLevel.FULL_ACCESS:
+            return APIResponse.error("You do not have permission to delete prescriptions for this patient.", status=403)
+
+        from apps.clinical.models import Prescription
+        # Try to find the prescription (including already soft-deleted ones)
+        # to ensure idempotency and clean up any orphaned IoT mappings.
+        rx = Prescription.all_objects.filter(id=prescription_id, patient=link.patient).first()
+        if not rx:
+            return APIResponse.error("Prescription not found.", status=404)
+        
+        # Soft delete the prescription (also cancels pending reminders and triggers IoT cleanup)
+        rx.soft_delete(user=request.user)
+        
+        return APIResponse.no_content('Medicine removed from patient schedule.')
+
 
 class CaregiverPatientDevicesView(APIView):
     permission_classes = [IsAuthenticated, IsCaregiver]

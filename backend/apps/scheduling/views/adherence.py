@@ -440,7 +440,46 @@ class AdherenceReportExportView(APIView):
             result = BytesIO()
             pisa_status = pisa.pisaDocument(BytesIO(html_content.encode("UTF-8")), result)
             if not pisa_status.err:
-                response = HttpResponse(result.getvalue(), content_type='application/pdf')
+                pdf_bytes = result.getvalue()
+
+                # Send email with PDF attachment
+                from django.core.mail import EmailMultiAlternatives
+                from django.template.loader import render_to_string
+                from django.conf import settings
+                import logging
+                logger = logging.getLogger('medadhere')
+
+                try:
+                    # Collect emails: Patient + Caregivers
+                    recipient_emails = [patient.user.email] if patient.user.email else []
+                    caregivers = patient.caregiver_links.select_related('caregiver__user').all()
+                    for link in caregivers:
+                        if link.caregiver.user.email:
+                            recipient_emails.append(link.caregiver.user.email)
+                    
+                    recipient_emails = list(set(recipient_emails))
+                    
+                    if recipient_emails:
+                        date_range = f"{since.strftime('%B %d, %Y')} to {timezone.now().strftime('%B %d, %Y')}"
+                        email_html = render_to_string('emails/adherence_report_email.html', {
+                            'patient_name': patient.user.full_name or patient.user.username,
+                            'days': days,
+                            'date_range': date_range
+                        })
+                        
+                        msg = EmailMultiAlternatives(
+                            subject=f"Medication Adherence Report - {patient.user.full_name or patient.user.username}",
+                            body=f"Please find attached the adherence report for the last {days} days.",
+                            from_email=settings.DEFAULT_FROM_EMAIL,
+                            to=recipient_emails,
+                        )
+                        msg.attach_alternative(email_html, 'text/html')
+                        msg.attach(f'adherence_report_{days}d.pdf', pdf_bytes, 'application/pdf')
+                        msg.send(fail_silently=True)
+                except Exception as e:
+                    logger.error(f"Failed to send adherence report email for patient {patient.id}: {e}")
+
+                response = HttpResponse(pdf_bytes, content_type='application/pdf')
                 response['Content-Disposition'] = f'attachment; filename="adherence_report_{days}d.pdf"'
                 return response
 

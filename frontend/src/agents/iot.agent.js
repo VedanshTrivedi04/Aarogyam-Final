@@ -113,6 +113,15 @@ class IoTAgent extends AgentBase {
     return this._post(api.post(`${IOT_BASE}/devices/${deviceId}/dispenser/fill/complete/`, payload));
   }
 
+  /** PATCH /dispenser/compartments/{num}/time/ — update alarm time for a compartment */
+  async updateCompartmentSlotTime(deviceId, compartmentNum, scheduledTime) {
+    return this._patch(api.patch(
+      `${IOT_BASE}/devices/${deviceId}/dispenser/compartments/${compartmentNum}/time/`,
+      { scheduled_time: scheduledTime },
+    ));
+  }
+
+
   // ── Fill Mode (legacy — for DeviceCompartmentMapping-based flow) ──
   async startFillMode(deviceId, compartmentNumber = 1) {
     return this._post(api.post(`${IOT_BASE}/devices/${deviceId}/fill/start/`, { compartment_number: compartmentNumber }));

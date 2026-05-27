@@ -1,9 +1,6 @@
-# ==========================================
-# MedAdhere Workspace-wide .gitignore
-# Covers Python backend, React frontend, IoT configurations, and local environments
-# ==========================================
-
-# --- Environment and Credentials (CRITICAL) ---
+# ==============================
+# Environment Variables & Secrets
+# ==============================
 .env
 .env.local
 .env.*.local
@@ -17,20 +14,18 @@ frontend/env (2)
 _ws_tokens.json
 credential.md.local
 
-# --- Python / Django Backend ---
+# ==============================
+# Python / Backend
+# ==============================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-/build/
 develop-eggs/
-/dist/
 downloads/
 eggs/
 .eggs/
-/lib/
-/lib64/
 parts/
 sdist/
 /var/
@@ -41,30 +36,77 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# Virtual Environments
 .venv/
 venv/
 /ENV/
 /env/
-# SQLite Database
+env/
+ENV/
+
+# Database
 *.sqlite3
 *.sqlite3-journal
 db.sqlite3
 db.sqlite3-journal
 
-# --- React / Vite Frontend ---
+# Testing / Coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+
+# ==============================
+# Node / Frontend (Vite)
+# ==============================
 node_modules/
 frontend/node_modules/
+/dist/
 frontend/dist/
 frontend/dist-ssr/
 frontend/.vite/
 .vite/
-*.local
-build_log.txt
-build_output.txt
-frontend/build_log.txt
-frontend/build_output.txt
+/build/
 
-# --- IDEs / Editors / OS files ---
+# Node Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Node Caches
+.npm/
+.eslintcache
+.stylelintcache
+
+# ==============================
+# Arduino / IoT
+# ==============================
+*.elf
+*.hex
+*.bin
+*.out
+build/
+
+# ==============================
+# OS Generated Files
+# ==============================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+ehthumbs_vista.db
+Thumbs.db
+desktop.ini
+
+# ==============================
+# IDE / Editor Files
+# ==============================
 .vscode/
 .idea/
 *.suo
@@ -72,15 +114,16 @@ frontend/build_output.txt
 *.njsproj
 *.sln
 *.sw?
-.DS_Store
-Thumbs.db
-desktop.ini
+*.swp
 
-# --- Logs ---
+# ==============================
+# Project Specific & Logs
+# ==============================
+*.local
 *.log
 logs/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+build_log.txt
+build_output.txt
+frontend/build_log.txt
+frontend/build_output.txt
+scratch/

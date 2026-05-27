@@ -261,7 +261,7 @@ export default function CaregiverSettings() {
                       {emailingInvoiceId === inv.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
                     </button>
                     <a
-                      href={`/api/v1/subscriptions/invoices/${inv.id}/download/`}
+                      href={import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/subscriptions/invoices/${inv.id}/download/` : `/api/v1/subscriptions/invoices/${inv.id}/download/`}
                       target="_blank" rel="noreferrer"
                       className="p-2 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-all"
                       title="Download PDF"

@@ -2,14 +2,14 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Pill, Plus, X, ArrowLeft, Clock, Loader2,
-  AlertCircle, Cpu, User, CheckCircle2, Sun, Moon, Utensils,
+  AlertCircle, Cpu, User, CheckCircle2, Sun, Moon, Utensils, Trash2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { useCaregiverPatients, useCaregiverPatientPrescriptions, useCreateCaregiverPrescription, useCaregiverPatientDevices, useRescheduleCompartment } from '@/hooks/useCaregiver';
-import { useAddMedicineToCompartment, useDispenserCompartments } from '@/hooks/useIoT';
+import { useCaregiverPatients, useCaregiverPatientPrescriptions, useCreateCaregiverPrescription, useDeleteCaregiverPrescription, useCaregiverPatientDevices, useRescheduleCompartment } from '@/hooks/useCaregiver';
+import { useDispenserCompartments } from '@/hooks/useIoT';
 
 // ── Shared slot metadata (same as DispenserGrid) ─────────────────────────────
 
@@ -53,11 +53,19 @@ function PatientTab({ patient, isActive, onClick }) {
 function CompartmentSlot({ slot, prescriptions: rxList = [], onAddClick, onEditClick }) {
   const meta  = SLOT_META[slot.compartment_number] ?? SLOT_META[1];
   const Icon  = meta.icon;
-  const medicines = slot.sub_compartments?.length ? slot.sub_compartments : rxList;
+  const activeSubs = (slot.sub_compartments || []).filter(sub => sub.is_active !== false);
+  const activeRx = rxList.filter(rx => rx.is_active !== false);
+  const medicines = activeSubs.length ? activeSubs : activeRx;
   const isEmpty = medicines.length === 0 && !slot.medication_name;
-  const displayTime = (slot && slot.scheduled_times && slot.scheduled_times.length > 0)
-    ? (Array.isArray(slot.scheduled_times) ? slot.scheduled_times[0] : String(slot.scheduled_times).split(',')[0])
-    : meta.time;
+  let displayTime = meta.time;
+  if (slot && slot.scheduled_times && slot.scheduled_times.length > 0) {
+    displayTime = Array.isArray(slot.scheduled_times) ? slot.scheduled_times.join(', ') : String(slot.scheduled_times);
+  } else if (rxList && rxList.length > 0) {
+    const rxTimes = rxList[0].schedules?.[0]?.times_of_day ?? [];
+    if (rxTimes.length > 0) {
+      displayTime = rxTimes.map(t => t.time).join(', ');
+    }
+  }
 
   return (
     <Card className={`rounded-[2rem] border-2 transition-all hover:shadow-elevation-2 overflow-hidden ${isEmpty ? 'border-dashed border-border/50' : 'border-transparent'}`}>
@@ -123,15 +131,35 @@ function CompartmentSlot({ slot, prescriptions: rxList = [], onAddClick, onEditC
 
 // ── Active prescription row ───────────────────────────────────────────────────
 
-function PrescriptionRow({ rx }) {
+function PrescriptionRow({ rx, patientId }) {
   const times = rx.schedules?.[0]?.times_of_day ?? [];
-  const slotNum = Object.values(SLOT_META).find(m => times.some(t => t.time === m.time))
-    ? Object.keys(SLOT_META).find(k => times.some(t => t.time === SLOT_META[k].time))
-    : null;
+  const slotNum = rx.compartment_number ?? (
+    Object.values(SLOT_META).find(m => times.some(t => t.time === m.time))
+      ? Number(Object.keys(SLOT_META).find(k => times.some(t => t.time === SLOT_META[k].time)))
+      : null
+  );
   const meta = slotNum ? SLOT_META[slotNum] : null;
+  const formattedTimes = times.map(t => t.time).join(', ');
+
+  const deleteMutation = useDeleteCaregiverPrescription();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const handleDelete = async () => {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    try {
+      await deleteMutation.mutateAsync({ patientId, prescriptionId: rx.id });
+      setConfirmDelete(false);
+    } catch (error) {
+      console.error('Delete failed:', error);
+      setConfirmDelete(false);
+    }
+  };
 
   return (
-    <div className="flex items-center gap-4 p-4 rounded-2xl bg-muted/30 hover:bg-muted/50 transition-colors">
+    <div className="flex items-center gap-4 p-4 rounded-2xl bg-muted/30 hover:bg-muted/50 transition-colors group">
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${meta ? meta.bg : 'bg-primary/10'}`}>
         {meta ? <meta.icon className={`w-5 h-5 ${meta.color}`} /> : <Pill className="w-5 h-5 text-primary" />}
       </div>
@@ -140,6 +168,7 @@ function PrescriptionRow({ rx }) {
         <p className="text-xs text-muted-foreground">
           {rx.dosage_value}{rx.dosage_unit}
           {meta && ` · ${meta.label}`}
+          {formattedTimes && ` at ${formattedTimes}`}
           {rx.end_date && ` · until ${new Date(rx.end_date).toLocaleDateString()}`}
           {rx.is_indefinite && ' · ongoing'}
         </p>
@@ -147,6 +176,22 @@ function PrescriptionRow({ rx }) {
       <Badge variant={rx.is_active ? 'success' : 'secondary'} className="text-[9px] font-black uppercase tracking-wider px-2 h-5 rounded-full shrink-0">
         {rx.is_active ? 'active' : 'paused'}
       </Badge>
+      <button
+        onClick={handleDelete}
+        disabled={deleteMutation.isPending}
+        className={`shrink-0 p-2 rounded-lg transition-all opacity-0 group-hover:opacity-100 ${
+          confirmDelete
+            ? 'bg-destructive/20 text-destructive hover:bg-destructive hover:text-white'
+            : 'text-muted-foreground hover:bg-destructive/20 hover:text-destructive'
+        }`}
+        title={confirmDelete ? 'Click again to confirm deletion' : 'Delete medicine'}
+      >
+        {deleteMutation.isPending ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Trash2 className="w-4 h-4" />
+        )}
+      </button>
     </div>
   );
 }
@@ -250,9 +295,8 @@ function AddMedicineModal({ patientId, deviceId, compartmentNumber, onClose, onS
   const [success, setSuccess] = useState(false);
 
   const createRx    = useCreateCaregiverPrescription();
-  const addToDevice = useAddMedicineToCompartment();
 
-  const isPending = createRx.isPending || addToDevice.isPending;
+  const isPending = createRx.isPending;
 
   function set(k, v) {
     setForm(f => ({ ...f, [k]: v }));
@@ -265,7 +309,7 @@ function AddMedicineModal({ patientId, deviceId, compartmentNumber, onClose, onS
     if (!form.quantity_per_dose || form.quantity_per_dose < 1) return setError('Quantity per dose must be at least 1.');
 
     try {
-      // 1. Create prescription + schedule on patient side
+      // 1. Create prescription + schedule on patient side and sync to linked IoT device
       await createRx.mutateAsync({
         patientId,
         payload: {
@@ -285,22 +329,6 @@ function AddMedicineModal({ patientId, deviceId, compartmentNumber, onClose, onS
           instructions: form.instructions || undefined,
         },
       });
-
-      // 2. Send ADD_MEDICINE command to IoT device (if device is linked)
-      if (deviceId) {
-        await addToDevice.mutateAsync({
-          deviceId,
-          compartmentNum: compartmentNumber,
-          data: {
-            medicine_name:      form.medicine_name.trim(),
-            quantity_per_dose:  Number(form.quantity_per_dose),
-            duration_days:      form.duration_days ?? 0,  // 0 = indefinite for firmware
-            total_pills:        Number(form.total_pills),
-            instructions:       form.instructions || '',
-            time_slot:          meta.key,
-          },
-        });
-      }
 
       if (form.doctor_name.trim()) saveDoctorName(form.doctor_name.trim());
       setSuccess(true);
@@ -488,10 +516,13 @@ export default function MedicineManager() {
     return [1, 2, 3, 4].map(n => {
       const deviceSlot = byNum[n] ?? { compartment_number: n, medication_name: null, scheduled_times: [], sub_compartments: [] };
       const meta = SLOT_META[n];
-      // Collect ALL prescriptions that match this slot's time OR compartment_number
+      // Collect ALL active prescriptions that match this slot's time OR compartment_number OR rescheduled times
       const slotRx = prescriptions.filter(rx =>
-        rx.compartment_number === n ||
-        rx.schedules?.some(s => s.times_of_day?.some(t => t.time === meta.time))
+        (rx.is_active !== false) && (
+          rx.compartment_number === n ||
+          rx.schedules?.some(s => s.times_of_day?.some(t => t.time === meta.time)) ||
+          (deviceSlot.scheduled_times && deviceSlot.scheduled_times.some(st => rx.schedules?.some(s => s.times_of_day?.some(t => t.time === st))))
+        )
       );
       return { ...deviceSlot, prescriptions: slotRx, sub_compartments: deviceSlot.sub_compartments ?? [] };
     });
@@ -643,7 +674,7 @@ export default function MedicineManager() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {prescriptions.map(rx => <PrescriptionRow key={rx.id} rx={rx} />)}
+                  {prescriptions.map(rx => <PrescriptionRow key={rx.id} rx={rx} patientId={activePatientId} />)}
                 </div>
               )}
             </CardContent>

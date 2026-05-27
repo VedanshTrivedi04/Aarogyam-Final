@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useAuthStore } from '@/stores/auth.store';
 
-const _apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const _apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const WS_BASE  = new URL(_apiUrl).origin.replace(/^http/, 'ws');
 
 /**

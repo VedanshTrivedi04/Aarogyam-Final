@@ -24,6 +24,10 @@ class AdherenceAgent extends AgentBase {
     return this._post(api.post(`${REMINDERS_BASE}/${reminderId}/log/`, payload));
   }
 
+  async dispenseNow(reminderId) {
+    return this._post(api.post(`${REMINDERS_BASE}/${reminderId}/dispense-now/`));
+  }
+
   async snoozeReminder(reminderId, minutes = 10) {
     return this._post(api.post(`${REMINDERS_BASE}/${reminderId}/snooze/`, { minutes }));
   }

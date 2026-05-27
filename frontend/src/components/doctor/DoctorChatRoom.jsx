@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/Badge';
 import { axiosInstance } from '@/lib/axios';
 import CallModal from '@/components/communications/CallModal';
 
-const _apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const _apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const WS_BASE  = new URL(_apiUrl).origin.replace(/^http/, 'ws');
 
 const STATUS_COLORS = {

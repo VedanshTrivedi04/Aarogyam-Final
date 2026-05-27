@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { useTodaySchedule, useLogDose, useStreak, useAdherenceRate } from '@/hooks/useAdherence';
+import { useTodaySchedule, useLogDose, useStreak, useAdherenceRate, useDispenseNow } from '@/hooks/useAdherence';
 import { usePrescriptions } from '@/hooks/usePrescriptions';
 import { useAuthStore } from '@/stores/auth.store';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -222,34 +222,44 @@ function SOSModal({ open, onClose }) {
 }
 
 // ─── Dose Card ────────────────────────────────────────────────────────────────
-const DoseCard = ({ time, name, dosage, status, onTake }) => (
+const DoseCard = ({ time, name, dosage, status, isWithinWindow, onTake, onDispenseNow }) => (
   <motion.div
     whileHover={{ x: 4 }}
     className={`flex items-center gap-4 p-4 rounded-2xl bg-background border transition-all group
       ${status === 'missed' ? 'border-destructive/40 bg-destructive/5' : 'border-border/50 hover:border-primary/30'}`}
   >
-    <div className={`w-12 h-12 rounded-xl flex items-center justify-center
+    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0
       ${status === 'taken'  ? 'bg-success/10 text-success'
       : status === 'missed' ? 'bg-destructive/10 text-destructive'
       : 'bg-secondary text-primary'}`}>
       <Pill className="w-6 h-6" />
     </div>
-    <div className="flex-1">
-      <div className="flex items-center gap-2">
-        <h4 className="font-bold text-foreground">{name}</h4>
-        {status === 'taken'  && <CheckCircle2 className="w-4 h-4 text-success" />}
-        {status === 'missed' && <ShieldAlert  className="w-4 h-4 text-destructive" />}
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-2 flex-wrap">
+        <h4 className="font-bold text-foreground truncate">{name}</h4>
+        {status === 'taken'  && <CheckCircle2 className="w-4 h-4 text-success shrink-0" />}
+        {status === 'missed' && <ShieldAlert  className="w-4 h-4 text-destructive shrink-0" />}
       </div>
       <p className="text-sm text-muted-foreground font-medium">{dosage} • {time}</p>
+      {status === 'pending' && isWithinWindow === false && (
+        <p className="text-[10px] text-accent font-semibold mt-0.5 flex items-center gap-1">
+          <Clock className="w-3 h-3" /> Outside scheduled window
+        </p>
+      )}
     </div>
     {status === 'pending' || status === 'snoozed' ? (
-      <Button variant="secondary" size="sm" onClick={onTake} className="rounded-lg h-9 px-4 text-xs font-bold uppercase tracking-wider">
-        Mark Taken
-      </Button>
+      <div className="flex flex-col gap-2 shrink-0">
+        <Button variant="secondary" size="sm" onClick={onTake} className="rounded-lg h-9 px-4 text-xs font-bold uppercase tracking-wider">
+          Mark Taken
+        </Button>
+        <Button variant="outline" size="sm" onClick={onDispenseNow} className="rounded-lg h-9 px-4 text-xs font-bold uppercase tracking-wider border-primary/40 text-primary">
+          Take Medicine Now
+        </Button>
+      </div>
     ) : status === 'missed' ? (
-      <Badge variant="danger" className="h-8 gap-1"><ShieldAlert className="w-3 h-3" /> Missed</Badge>
+      <Badge variant="danger" className="h-8 gap-1 shrink-0"><ShieldAlert className="w-3 h-3" /> Missed</Badge>
     ) : (
-      <Badge variant="success" className="h-8">Completed</Badge>
+      <Badge variant="success" className="h-8 shrink-0">Completed</Badge>
     )}
   </motion.div>
 );
@@ -290,6 +300,7 @@ export default function PatientDashboard() {
   const { data: scheduleData, isLoading: isScheduleLoading } = useTodaySchedule();
   const { data: prescriptions = [] } = usePrescriptions({ isActive: true });
   const logDose = useLogDose();
+  const dispenseNow = useDispenseNow();
   const { data: streakData } = useStreak();
   const { data: adherenceData } = useAdherenceRate();
   const [sosOpen, setSosOpen] = React.useState(false);
@@ -305,32 +316,41 @@ export default function PatientDashboard() {
   const doses = React.useMemo(() => {
     if (!scheduleData) return [];
     return scheduleData.map(item => {
-      const d    = new Date(item.scheduled_at);
-      const hhmm = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-      // Determine slot based on backend metadata if available (time_slot or label)
-      let slot;
-      const slotName = (item.time_slot || item.label || '').toLowerCase();
+      const d       = new Date(item.scheduled_at);
+      const hour    = d.getHours();
       const withFood = !!item.with_food;
 
-      if (slotName.includes('morning')) {
+      // 1. Try label from backend (most reliable)
+      const slotName = (item.label || '').toLowerCase();
+      let slot;
+
+      if (slotName.includes('morning') || slotName.includes('breakfast') || slotName.includes('सुबह')) {
         slot = withFood ? 'morning_after' : 'morning_before';
-      } else if (slotName.includes('night') || slotName.includes('evening')) {
+      } else if (slotName.includes('night') || slotName.includes('evening') || slotName.includes('dinner') || slotName.includes('रात')) {
         slot = withFood ? 'night_after' : 'night_before';
+      } else if (slotName.includes('afternoon') || slotName.includes('lunch') || slotName.includes('दोपहर')) {
+        // Map afternoon to morning slots for now (only 4 slots supported)
+        slot = withFood ? 'morning_after' : 'morning_before';
       } else {
-        // Fallback to time-based heuristic
-        const hhmm = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-        slot = MEAL_SLOTS.find(s => s.time === hhmm)?.key
-                 ?? (d.getHours() < 12 ? 'morning_before' : 'night_before');
+        // 2. Fallback: hour-range heuristic (much more robust than exact time match)
+        //    Morning  = 04:00 – 13:59
+        //    Night    = 14:00 – 03:59 (next day)
+        if (hour >= 4 && hour < 14) {
+          slot = withFood ? 'morning_after' : 'morning_before';
+        } else {
+          slot = withFood ? 'night_after' : 'night_before';
+        }
       }
 
       return {
-        id:     item.id,
-        time:   d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        name:   item.medication_name,
-        dosage: `${item.dose_value || ''}${item.dose_unit || ''}`.trim() || '1 pill',
-        status: item.status.toLowerCase(),
+        id:              item.id,
+        time:            d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        name:            item.medication_name,
+        dosage:          `${item.dose_value || ''}${item.dose_unit || ''}`.trim() || '1 pill',
+        status:          item.status.toLowerCase(),
         slot,
-        with_food: item.with_food,
+        with_food:       item.with_food,
+        isWithinWindow:  item.is_within_window,
       };
     });
   }, [scheduleData]);
@@ -350,6 +370,13 @@ export default function PatientDashboard() {
 
   const handleTake = (id) => {
     logDose.mutate({ reminderId: id, status: 'TAKEN' });
+  };
+
+  const handleDispenseNow = (id) => {
+    dispenseNow.mutate(id, {
+      onSuccess: () => alert('Command sent to dispenser. Please bring your hand near the sensor.'),
+      onError: (err) => alert('Failed to send command: ' + (err?.response?.data?.detail || err.message))
+    });
   };
 
   return (
@@ -444,7 +471,13 @@ export default function PatientDashboard() {
                       <p className="text-xs text-muted-foreground italic py-3 text-center">No medicines for this slot.</p>
                     ) : (
                       slotDoses.map(dose => (
-                        <DoseCard key={dose.id} {...dose} onTake={() => handleTake(dose.id)} />
+                        <DoseCard
+                          key={dose.id}
+                          {...dose}
+                          isWithinWindow={dose.isWithinWindow}
+                          onTake={() => handleTake(dose.id)}
+                          onDispenseNow={() => handleDispenseNow(dose.id)}
+                        />
                       ))
                     )}
                   </div>

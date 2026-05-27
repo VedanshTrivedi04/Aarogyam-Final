@@ -57,6 +57,12 @@ export const useLogDose = (patientId) => {
   });
 };
 
+export const useDispenseNow = () => {
+  return useMutation({
+    mutationFn: (reminderId) => adherenceAgent.dispenseNow(reminderId),
+  });
+};
+
 export const useAdherenceRate = (patientId, days = 30) => useQuery({
   queryKey: qk.adherence.rate(patientId),
   queryFn: () => adherenceAgent.getAdherenceRate({ days, patientId }),

@@ -238,6 +238,21 @@ export function useCompleteFill() {
   });
 }
 
+// Update a single compartment's scheduled alarm time (new dispenser system)
+export function useUpdateCompartmentSlotTime() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ deviceId, compartmentNum, scheduledTime }) =>
+      iotAgent.updateCompartmentSlotTime(deviceId, compartmentNum, scheduledTime),
+    onSuccess: (_data, { deviceId }) => {
+      qc.invalidateQueries({ queryKey: iotKey.dispenserCompartments(deviceId) });
+      qc.invalidateQueries({ queryKey: iotKey.compartments(deviceId) });
+      qc.invalidateQueries({ queryKey: iotKey.device(deviceId) });
+    },
+  });
+}
+
+
 // ── Dose management ──────────────────────────────────────────────────────────
 export function useDoseAlerts() {
   return useQuery({

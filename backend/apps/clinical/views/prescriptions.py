@@ -89,8 +89,13 @@ class PrescriptionDetailView(APIView):
     def delete(self, request, prescription_id):
         """DELETE /api/v1/patients/me/prescriptions/{id}/"""
         patient = get_patient_or_404(request.user)
-        rx = get_object_or_404(Prescription, id=prescription_id, patient=patient, deleted_at__isnull=True)
-        rx.soft_delete(user=request.user)  # also cancels pending reminders
+        rx = Prescription.all_objects.filter(id=prescription_id, patient=patient).first()
+        if not rx:
+            return APIResponse.error("Prescription not found.", status=404)
+        
+        # Soft delete the prescription (also cancels pending reminders and triggers IoT cleanup)
+        rx.soft_delete(user=request.user)
+        
         return APIResponse.no_content('Prescription removed.')
 
 

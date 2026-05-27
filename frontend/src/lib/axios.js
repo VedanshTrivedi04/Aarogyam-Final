@@ -48,7 +48,7 @@ const logApi = (phase, config, payload) => {
  * Includes interceptors for auth, error handling, and request/response transformation
  */
 const axiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1',
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -62,6 +62,16 @@ const axiosInstance = axios.create({
 axiosInstance.interceptors.request.use(
   (config) => {
     config.metadata = { startedAt: Date.now() };
+
+    // Normalise config.url to strip duplicate '/api/v1' if baseURL already ends with it
+    if (config.url && (config.url.startsWith('/api/v1/') || config.url === '/api/v1')) {
+      const apiPrefix = '/api/v1';
+      const baseURLHasPrefix = config.baseURL && (config.baseURL.endsWith(apiPrefix) || config.baseURL.endsWith(apiPrefix + '/'));
+      if (baseURLHasPrefix) {
+        config.url = config.url === '/api/v1' ? '/' : config.url.substring(apiPrefix.length);
+      }
+    }
+
     const token = useAuthStore.getState().accessToken;
     const isAuthEndpointRequest =
       config.url?.includes('/auth/login/') ||
@@ -113,7 +123,7 @@ axiosInstance.interceptors.response.use(
         originalRequest._retry = true;
 
         try {
-          const refreshResponse = await axiosInstance.post('/auth/refresh/', {
+          const refreshResponse = await axiosInstance.post('/api/v1/auth/refresh/', {
             refresh: refreshToken,
           }, {
             _retry: true,

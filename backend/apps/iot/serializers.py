@@ -171,7 +171,7 @@ class SubCompartmentSerializer(serializers.ModelSerializer):
 
 
 class PhysicalCompartmentSerializer(serializers.ModelSerializer):
-    sub_compartments = SubCompartmentSerializer(many=True, read_only=True)
+    sub_compartments = serializers.SerializerMethodField()
     time_slot_display = serializers.SerializerMethodField()
     total_medicines = serializers.SerializerMethodField()
     dose_expected_reduction_grams = serializers.SerializerMethodField()
@@ -180,12 +180,17 @@ class PhysicalCompartmentSerializer(serializers.ModelSerializer):
         model = PhysicalCompartment
         fields = [
             'id', 'compartment_number', 'time_slot', 'time_slot_display',
+            'scheduled_time',
             'expected_weight_grams', 'current_balance_weight_grams',
             'is_active', 'last_filled_at',
             'total_medicines', 'dose_expected_reduction_grams',
             'sub_compartments',
         ]
         read_only_fields = ['id', 'last_filled_at']
+
+    def get_sub_compartments(self, obj):
+        active_subs = obj.sub_compartments.filter(is_active=True)
+        return SubCompartmentSerializer(active_subs, many=True).data
 
     def get_time_slot_display(self, obj):
         return obj.get_time_slot_display_name()
@@ -206,6 +211,7 @@ class PhysicalCompartmentListSerializer(serializers.ModelSerializer):
         model = PhysicalCompartment
         fields = [
             'id', 'compartment_number', 'time_slot', 'time_slot_display',
+            'scheduled_time',
             'expected_weight_grams', 'current_balance_weight_grams',
             'is_active', 'last_filled_at',
         ]

@@ -58,6 +58,11 @@ class CaregiverAgent extends AgentBase {
     return this._post(api.post(`${CAREGIVER_BASE}/patients/${patientId}/prescriptions/`, payload));
   }
 
+  /** DELETE /api/v1/caregivers/patients/:id/prescriptions/:prescriptionId/ */
+  async deletePatientPrescription(patientId, prescriptionId) {
+    return this._delete(api.delete(`${CAREGIVER_BASE}/patients/${patientId}/prescriptions/${prescriptionId}/`));
+  }
+
   /** GET /api/v1/caregivers/patients/:id/devices/ */
   async getPatientDevices(patientId) {
     return this._get(api.get(`${CAREGIVER_BASE}/patients/${patientId}/devices/`));

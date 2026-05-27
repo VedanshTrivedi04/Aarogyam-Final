@@ -296,9 +296,21 @@ class PhysicalCompartment(BaseModel):
         ('night_after', 'Night After Food'),
     ]
 
+    # Default times used when no custom time is set
+    SLOT_DEFAULT_TIMES = {
+        'morning_before': '08:00',
+        'morning_after':  '09:00',
+        'night_before':   '20:00',
+        'night_after':    '21:00',
+    }
+
     device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name='physical_compartments')
     compartment_number = models.PositiveSmallIntegerField()     # 1–4 (hardware fixed)
     time_slot = models.CharField(max_length=20, choices=TIME_SLOT_CHOICES)
+    scheduled_time = models.CharField(
+        max_length=5, default='08:00',
+        help_text='Custom alarm time in HH:MM format (24h). Caregiver can change this.'
+    )
     expected_weight_grams = models.FloatField(default=0.0)      # set after filling mode
     current_balance_weight_grams = models.FloatField(default=0.0)  # updated after each dose
     is_active = models.BooleanField(default=True)
@@ -309,10 +321,22 @@ class PhysicalCompartment(BaseModel):
         ordering = ['compartment_number']
 
     def __str__(self):
-        return f"Device {self.device_id} | Compartment {self.compartment_number} ({self.time_slot})"
+        return f"Device {self.device_id} | Compartment {self.compartment_number} ({self.time_slot} @ {self.scheduled_time})"
 
     def get_time_slot_display_name(self) -> str:
         return dict(self.TIME_SLOT_CHOICES).get(self.time_slot, self.time_slot)
+
+    def get_scheduled_hour_minute(self):
+        """Return (hour, minute) from scheduled_time field."""
+        try:
+            h, m = map(int, self.scheduled_time.split(':'))
+            return h, m
+        except Exception:
+            # Fallback to slot default if field is malformed
+            default = self.SLOT_DEFAULT_TIMES.get(self.time_slot, '08:00')
+            h, m = map(int, default.split(':'))
+            return h, m
+
 
 
 class SubCompartment(BaseModel):

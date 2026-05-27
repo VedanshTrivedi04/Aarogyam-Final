@@ -115,6 +115,19 @@ export function useCreateCaregiverPrescription() {
   });
 }
 
+/** Delete a prescription from a patient */
+export function useDeleteCaregiverPrescription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ patientId, prescriptionId }) => caregiverAgent.deletePatientPrescription(patientId, prescriptionId),
+    onSuccess: (_, { patientId }) => {
+      qc.invalidateQueries({ queryKey: [...qk.caregiver.patients(), patientId, 'prescriptions'] });
+      qc.invalidateQueries({ queryKey: [...qk.caregiver.patients(), patientId, 'devices'] });
+      qc.invalidateQueries({ queryKey: qk.iot.devices() });
+    },
+  });
+}
+
 /** Get IoT devices linked to a patient (with compartment mapping) */
 export function useCaregiverPatientDevices(patientId) {
   return useQuery({

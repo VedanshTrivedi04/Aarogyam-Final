@@ -21,6 +21,7 @@ urlpatterns = [
     path('patients/<uuid:patient_id>/adherence/export/', CaregiverPatientAdherenceExportView.as_view(), name='caregiver-patient-adherence-export'),
     path('patients/<uuid:patient_id>/alerts/',     CaregiverPatientAlertsView.as_view(),   name='caregiver-patient-alerts'),
     path('patients/<uuid:patient_id>/prescriptions/', CaregiverPatientPrescriptionsView.as_view(), name='caregiver-patient-prescriptions'),
+    path('patients/<uuid:patient_id>/prescriptions/<uuid:prescription_id>/', CaregiverPatientPrescriptionsView.as_view(), name='caregiver-patient-prescription-detail'),
     path('patients/<uuid:patient_id>/devices/',    CaregiverPatientDevicesView.as_view(),  name='caregiver-patient-devices'),
     path('patients/<uuid:patient_id>/devices/<uuid:device_id>/compartments/<int:compartment_number>/reschedule/',
          CaregiverCompartmentRescheduleView.as_view(), name='caregiver-compartment-reschedule'),

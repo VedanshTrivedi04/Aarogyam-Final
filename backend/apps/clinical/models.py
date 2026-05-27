@@ -223,11 +223,67 @@ class Prescription(BaseModel):
         return f'{self.patient.patient_code} — {self.medication.name} {self.dosage_value}{self.dosage_unit}'
 
     def soft_delete(self, user=None):
-        """Override: also cancel all pending reminder jobs."""
+        """Override: also cancel all pending reminder jobs and clean up IoT mappings."""
         from apps.scheduling.models import ReminderJob
         ReminderJob.objects.filter(
             schedule__prescription=self, status='PENDING'
         ).update(status='CANCELLED')
+
+        # Clean up IoT mappings and de-activate sub-compartments
+        try:
+            from apps.iot.models import Device, DeviceCompartmentMapping, PhysicalCompartment, SubCompartment, DeviceCommand
+            from apps.iot.weight_service import calculate_compartment_expected_weight
+            import datetime
+
+            # Find the patient's active device
+            device = Device.objects.filter(linked_patient=self.patient, is_active=True).first()
+            if device:
+                compartments_to_update = set()
+                if self.compartment_number:
+                    try:
+                        compartments_to_update.add(int(self.compartment_number))
+                    except (ValueError, TypeError):
+                        pass
+
+                mappings = DeviceCompartmentMapping.objects.filter(prescription=self)
+                for mapping in mappings:
+                    try:
+                        compartments_to_update.add(int(mapping.compartment_number))
+                    except (ValueError, TypeError):
+                        pass
+
+                for comp_num in compartments_to_update:
+                    comp = PhysicalCompartment.objects.filter(device=device, compartment_number=comp_num).first()
+                    if comp:
+                        # Deactivate sub-compartments matching medicine name
+                        SubCompartment.objects.filter(compartment=comp, medicine_name__iexact=self.medication.name).update(is_active=False)
+
+                        # Recalculate compartment expected weight
+                        active_subs = comp.sub_compartments.filter(is_active=True)
+                        comp.expected_weight_grams = round(calculate_compartment_expected_weight(active_subs), 3)
+                        comp.save(update_fields=['expected_weight_grams'])
+
+                # Delete old-architecture DeviceCompartmentMapping entries
+                mappings.delete()
+
+                # Queue SYNC_SCHEDULE command to update device firmware
+                DeviceCommand.objects.create(
+                    device=device,
+                    command_type='SYNC_SCHEDULE',
+                    payload={
+                        'reason': 'prescription_deleted',
+                        'compartment': self.compartment_number,
+                        'medicine': self.medication.name,
+                    },
+                    expires_at=timezone.now() + datetime.timedelta(hours=24),
+                )
+        except Exception as e:
+            # We don't want an IoT sync cleanup error to block prescription soft deletion,
+            # but we should log warning.
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f'IoT sync failed for prescription deletion {self.id}: {e}')
+
         self.is_active = False
         super().soft_delete(user=user)
 
