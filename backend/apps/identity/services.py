@@ -350,8 +350,9 @@ class OTPService:
             )
             msg.attach_alternative(html_body, 'text/html')
             msg.send(fail_silently=False)
-        except Exception:
-            pass
+        except Exception as e:
+            # Throwing the exact error so it can be seen in server logs and API response
+            raise ValueError(f"Email sending failed: {str(e)}")
 
     @staticmethod
     def verify_otp_and_login(email: str, otp: str, request=None) -> dict:
