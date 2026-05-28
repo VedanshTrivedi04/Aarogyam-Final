@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333" />
+    </marker>
+    <style>
+      .box { fill:#f8f9fb; stroke:#2b6cb0; stroke-width:2; rx:6; }
+      .text { font-family: Arial, Helvetica, sans-serif; font-size:14px; fill:#0f172a }
+      .title { font-size:18px; font-weight:700 }
+      .small { font-size:12px; fill:#334155 }
+      .arrow { stroke:#333; stroke-width:2; fill:none; marker-end:url(#arrow) }
+    </style>
+  </defs>
+
+  <!-- Title -->
+  <text x="40" y="28" class="text title">Medication Adherence Workflow</text>
+
+  <!-- Top row -->
+  <rect x="60" y="50" width="220" height="56" class="box" />
+  <text x="170" y="82" text-anchor="middle" class="text">Patient Enrollment</text>
+  <text x="170" y="99" text-anchor="middle" class="small">collect profile & contacts</text>
+
+  <rect x="340" y="50" width="220" height="56" class="box" />
+  <text x="450" y="82" text-anchor="middle" class="text">Create Schedule</text>
+  <text x="450" y="99" text-anchor="middle" class="small">dose, time, frequency</text>
+
+  <rect x="620" y="50" width="220" height="56" class="box" />
+  <text x="730" y="82" text-anchor="middle" class="text">Activate Reminders</text>
+  <text x="730" y="99" text-anchor="middle" class="small">enable notifications</text>
+
+  <rect x="900" y="50" width="220" height="56" class="box" />
+  <text x="1010" y="82" text-anchor="middle" class="text">Send Reminder</text>
+  <text x="1010" y="99" text-anchor="middle" class="small">scheduled time</text>
+
+  <!-- Arrows top row -->
+  <path d="M280 78 L340 78" class="arrow" />
+  <path d="M560 78 L620 78" class="arrow" />
+  <path d="M840 78 L900 78" class="arrow" />
+
+  <!-- Acknowledge path -->
+  <rect x="660" y="170" width="200" height="48" class="box" />
+  <text x="760" y="200" text-anchor="middle" class="text">Acknowledge (Taken)</text>
+
+  <rect x="660" y="240" width="200" height="48" class="box" />
+  <text x="760" y="270" text-anchor="middle" class="text">Record Adherence</text>
+
+  <rect x="660" y="310" width="200" height="48" class="box" />
+  <text x="760" y="340" text-anchor="middle" class="text">Optional: Notify Caregiver</text>
+
+  <!-- No-ack path -->
+  <rect x="980" y="170" width="200" height="48" class="box" />
+  <text x="1080" y="200" text-anchor="middle" class="text">No Acknowledgement</text>
+
+  <rect x="980" y="240" width="200" height="48" class="box" />
+  <text x="1080" y="270" text-anchor="middle" class="text">Wait (configured)</text>
+
+  <rect x="980" y="310" width="200" height="48" class="box" />
+  <text x="1080" y="340" text-anchor="middle" class="text">Mark as Missed</text>
+
+  <rect x="980" y="380" width="200" height="48" class="box" />
+  <text x="1080" y="410" text-anchor="middle" class="text">Send Alert to Caregiver</text>
+
+  <!-- Caregiver review and escalation -->
+  <rect x="660" y="480" width="260" height="56" class="box" />
+  <text x="790" y="512" text-anchor="middle" class="text">Caregiver Reviews & Follows Up</text>
+
+  <rect x="660" y="560" width="260" height="56" class="box" />
+  <text x="790" y="592" text-anchor="middle" class="text">Escalate to Clinician (if repeated)</text>
+
+  <!-- Schedule change & periodic review -->
+  <rect x="60" y="170" width="220" height="56" class="box" />
+  <text x="170" y="200" text-anchor="middle" class="text">Schedule Change</text>
+  <text x="170" y="217" text-anchor="middle" class="small">update medication/time</text>
+
+  <rect x="60" y="260" width="220" height="56" class="box" />
+  <text x="170" y="288" text-anchor="middle" class="text">Periodic Summary & Review</text>
+  <text x="170" y="305" text-anchor="middle" class="small">weekly/monthly trends</text>
+
+  <!-- Arrows from Send Reminder to branches -->
+  <path d="M1010 106 L1010 170" class="arrow" />
+  <path d="M1010 170 L760 170" class="arrow" />
+  <path d="M1010 170 L1090 170" class="arrow" />
+
+  <!-- Acknowledge arrows -->
+  <path d="M1010 126 L760 190" class="arrow" />
+  <path d="M760 218 L760 240" class="arrow" />
+  <path d="M760 288 L760 310" class="arrow" />
+
+  <!-- No-ack arrows -->
+  <path d="M1010 126 L1090 190" class="arrow" />
+  <path d="M1090 218 L1090 240" class="arrow" />
+  <path d="M1090 288 L1090 310" class="arrow" />
+  <path d="M1090 358 L870 420" class="arrow" />
+
+  <!-- Caregiver arrows -->
+  <path d="M760 376 L760 480" class="arrow" />
+  <path d="M760 536 L760 560" class="arrow" />
+
+  <!-- Schedule change arrows -->
+  <path d="M170 106 L170 170" class="arrow" />
+  <path d="M170 316 L410 316" class="arrow" />
+  <path d="M410 316 L730 316" class="arrow" />
+
+  <!-- Loop arrow from Escalate back to Periodic Review -->
+  <path d="M790 616 L790 700 L170 700 L170 316" class="arrow" />
+
+  <!-- Footer note -->
+  <text x="40" y="765" class="small">Diagram: key daily flow (reminder → acknowledge or miss → alert → review). Use this file in Word or an image viewer.</text>
+</svg>

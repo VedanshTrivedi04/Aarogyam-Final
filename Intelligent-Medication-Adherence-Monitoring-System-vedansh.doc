@@ -1,0 +1,132 @@
+{\rtf1\ansi\deff0
+{\fonttbl{\f0\fswiss Helvetica;}{\f1\fmodern Courier New;}}
+\fs28\b Intelligent Medication Adherence Monitoring System\b0\par
+\par
+\fs24\b 1. Project Overview\b0\par
+\par
+- Project name: Intelligent Medication Adherence Monitoring System\par
+- What it is: A user-centered solution that helps patients follow their prescribed medication schedules by tracking adherence, providing timely reminders, and notifying caregivers or healthcare providers when doses are missed or patterns of non-adherence appear.\par
+- Why it was created: To improve medication adherence, reduce missed or incorrect dosing, support caregivers and clinicians with timely information, and ultimately improve health outcomes for patients who rely on regular medication.\par
+- Who benefits: Patients who take regular medications, family members and caregivers who support patients, and healthcare teams that monitor treatment plans and outcomes.\par
+\par
+\b 2. Goals & Objectives\b0\par
+\par
+- Improve adherence: Increase the percentage of on-time medication doses taken by patients.\par
+- Early intervention: Detect and notify caregivers or healthcare teams about missed doses or concerning patterns quickly.\par
+- Reduce caregiver burden: Provide clear, concise alerts and summaries so caregivers can act with confidence.\par
+- Enhance safety: Help reduce medication errors by making schedules and reminders easy to follow.\par
+- Support engagement: Encourage patients to participate actively in their care by making adherence simple and understandable.\par
+\par
+\b 3. Feature List (detailed)\b0\par
+\par
+\bullet  Personalized Reminders\par
+\tab - What it does: Sends timely reminders for each scheduled dose and confirms when a dose is taken.\par
+\tab - Why it matters: Reduces forgetfulness and helps maintain the correct dosing schedule.\par
+\par
+\bullet  Adherence Tracking & History\par
+\tab - What it does: Records when doses are acknowledged or missed and maintains an easy-to-read history for review.\par
+\tab - Why it matters: Provides evidence of adherence over time for caregivers and clinicians to review.\par
+\par
+\bullet  Alerts & Notifications\par
+\tab - What it does: Notifies caregivers or designated contacts when a dose is missed or when repeated non-adherence is detected.\par
+\tab - Why it matters: Enables rapid support or intervention to prevent negative health consequences.\par
+\par
+\bullet  Caregiver Portal / Dashboard\par
+\tab - What it does: Presents caregivers with a clear summary of medication schedules, adherence status, recent alerts, and suggested next steps.\par
+\tab - Why it matters: Centralizes information so caregivers can prioritize attention and coordinate care.\par
+\par
+\bullet  Patient Reminders & Acknowledgement\par
+\tab - What it does: Lets patients acknowledge they have taken a dose and, if needed, indicate reasons for missed doses.\par
+\tab - Why it matters: Encourages patient responsibility while providing context for missed doses.\par
+\par
+\bullet  Scheduling & Dose Management\par
+\tab - What it does: Allows schedules to be created, adjusted, and viewed in a simple calendar-like format.\par
+\tab - Why it matters: Keeps complex medication regimens organized and understandable.\par
+\par
+\bullet  Reports & Summaries\par
+\tab - What it does: Generates concise adherence summaries for caregivers and periodic summaries that can be shared with clinicians.\par
+\tab - Why it matters: Supports care decisions and helps track progress over time.\par
+\par
+\bullet  Privacy & Access Controls\par
+\tab - What it does: Ensures that patient information and adherence records are visible only to authorized people and that access is managed appropriately.\par
+\tab - Why it matters: Protects patient privacy and ensures trust.\par
+\par
+\b 4. User Roles\b0\par
+\par
+- Patient\par
+\tab - Primary user who receives reminders and acknowledges doses.\par
+\tab - Access: View own schedule and adherence history; acknowledge doses; optionally note reasons for missed doses.\par
+\par
+- Caregiver (Family Member / Home Caregiver)\par
+\tab - Supports the patient, receives alerts, and reviews summaries.\par
+\tab - Access: View assigned patient schedules and adherence status; receive alerts; view reports; add notes.\par
+\par
+- Clinician / Healthcare Provider\par
+\tab - Monitors adherence trends and acts on clinical concerns.\par
+\tab - Access: View adherence reports and summaries for patients under their care; receive periodic summaries or alerts as configured.\par
+\par
+- System Administrator / Support Staff\par
+\tab - Manages user accounts and overall system settings (in a non-technical, administrative sense).\par
+\tab - Access: Limited to administrative tasks such as managing contacts and high-level configurations; no alteration of clinical recommendations.\par
+\par
+\b 5. User Journey / Workflow\b0\par
+\par
+The following flow describes the typical interactions and escalation paths.\par
+\par
+1. Patient Enrollment:\par
+\tab - Collect patient identity and contact details.\par
+\tab - Assign caregiver(s) and emergency contacts.\par
+\tab - Enter medication list and schedule (dose, time, frequency).\par
+\tab - Confirm activation and notify stakeholders.\par
+\par
+2. Reminder Delivery:\par
+\tab - At scheduled time, send reminder to patient.\par
+\tab - Log the reminder event with timestamp.\par
+\par
+3. Patient Response Handling:\par
+\tab - Acknowledge (Taken): record timestamp as successful dose; update adherence history; optional confirmation to caregiver.\par
+\tab - Missed (No Acknowledgement): after configured wait time, mark dose as missed; send alert to caregiver; record missed event.\par
+\par
+4. Caregiver Interaction:\par
+\tab - Receive alert; view patient status and recent history; contact patient or assist as needed; mark follow-up actions.\par
+\par
+5. Escalation Rules:\par
+\tab - Single missed dose: caregiver alert and follow-up suggestion.\par
+\tab - Multiple consecutive misses or pattern of non-adherence: escalate to clinician with summary report.\par
+\par
+6. Schedule Adjustment:\par
+\tab - Caregiver or clinician updates schedule; system sends update notifications; new schedule becomes active.\par
+\par
+7. Reporting and Review:\par
+\tab - Generate weekly/monthly adherence summaries; caregiver/clinician reviews; decide interventions or schedule changes.\par
+\par
+\b 6. Module Breakdown\b0\par
+\par
+- Enrollment & Profile Management: Handles user profiles, contact assignments, and basic preferences.\par
+- Scheduling & Reminders: Manages medication schedules and sends reminders at appropriate times.\par
+- Adherence Recording: Stores acknowledgements and missed-dose records in an easy-to-read format.\par
+- Notifications & Escalation: Manages alert rules, escalation paths, and delivery of notifications to caregivers and clinicians.\par
+- Reporting & Summaries: Produces human-readable summaries and periodic reports for caregivers and clinicians.\par
+- Access & Privacy Controls: Ensures only authorized individuals can view or act on a patient’s information.\par
+- Support & Help: Provides guidance, help content, and contact options for non-technical users.\par
+\par
+\b 7. Limitations & Future Scope\b0\par
+\par
+Current Limitations:\par
+- The system focuses on reminders and monitoring; it does not replace professional medical advice.\par
+- It does not automatically verify ingestion of medication beyond patient acknowledgement.\par
+- Integration with external clinical records or pharmacy systems is not included at present.\par
+\par
+Future Enhancements (possible additions):\par
+- Enhanced caregiver collaboration tools such as shared notes and task assignment.\par
+- Customizable escalation rules and more flexible alerting preferences.\par
+- Optional supportive content for patients (short tips, motivational messages) to encourage adherence.\par
+- Safe integration options for clinicians to import adherence summaries into clinical workflows.\par
+- Simple tools to support medication reconciliation during transitions of care.\par
+\par
+\b Appendix — Workflow Diagram (text)\b0\par
+\par
+Patient Enrollment -> Create Schedule -> Activate Reminders -> Send Reminder -> [Acknowledge: Record] or [No Acknowledge: Wait -> Mark Missed -> Alert Caregiver -> Caregiver Review -> (if repeated) Escalate to Clinician] -> Periodic Summary & Review -> Schedule Update (loop)\par
+\par
+\par
+}\par
