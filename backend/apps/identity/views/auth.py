@@ -267,7 +267,12 @@ class RequestOTPView(APIView):
         email = request.data.get('email', '').strip()
         if not email:
             return APIResponse.error('Email is required.', code='VALIDATION_ERROR')
-        OTPService.send_otp(email)
+        
+        try:
+            OTPService.send_otp(email)
+        except ValueError as e:
+            return APIResponse.error(str(e), code='EMAIL_FAILED', status=400)
+            
         return APIResponse.success(message='If this email is registered, an OTP has been sent.')
 
 

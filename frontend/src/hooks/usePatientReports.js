@@ -40,12 +40,13 @@ export function useMedicationBreakdown(days = 30, patientId = null) {
 
 export function useExportAdherenceReport(patientId = null) {
   return async ({ days = 30, format = 'pdf' } = {}) => {
-    const url = patientId
+    const isValidId = patientId && patientId !== 'undefined' && patientId !== 'null' && patientId !== 'me';
+    const url = isValidId
       ? `/caregivers/patients/${patientId}/adherence/export/`
       : '/adherence/export/';
     try {
       const res = await axiosInstance.get(url, {
-        params: { days, format },
+        params: { days, export_format: format },
         responseType: 'blob',
       });
       return res;

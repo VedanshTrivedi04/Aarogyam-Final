@@ -128,7 +128,7 @@ class AdherenceReportExportView(APIView):
 
         patient = get_patient_or_404(request.user)
         days    = min(int(request.query_params.get('days', 30)), 365)
-        fmt     = request.query_params.get('format', 'json')
+        fmt     = request.query_params.get('export_format', request.query_params.get('format', 'json'))
 
         from django.utils import timezone
         import datetime
@@ -166,10 +166,40 @@ class AdherenceReportExportView(APIView):
             from io import BytesIO
             from xhtml2pdf import pisa
             from django.http import HttpResponse
+            import urllib.parse
+            import json
 
             # Fetch stats summary
             summary = AdherenceReportService.get_summary(patient, days=days)
             breakdown = AdherenceReportService.get_medication_breakdown(patient, days=days)
+            timeline = AdherenceReportService.get_timeline(patient, days=days)
+
+            # Generate QuickChart URL for the timeline (last 14 days for readability)
+            chart_data = timeline[-14:] if len(timeline) > 14 else timeline
+            labels = [d['date'][-5:] for d in chart_data] # Just MM-DD
+            taken_data = [d.get('taken', 0) for d in chart_data]
+            missed_data = [d.get('missed', 0) for d in chart_data]
+
+            chart_config = {
+                "type": "bar",
+                "data": {
+                    "labels": labels,
+                    "datasets": [
+                        {"label": "Taken", "data": taken_data, "backgroundColor": "#0B6E7A"},
+                        {"label": "Missed", "data": missed_data, "backgroundColor": "#FF6B6B"}
+                    ]
+                },
+                "options": {
+                    "title": {"display": False},
+                    "legend": {"position": "bottom"},
+                    "scales": {
+                        "xAxes": [{"stacked": True, "gridLines": {"display": False}}],
+                        "yAxes": [{"stacked": True, "ticks": {"beginAtZero": True, "stepSize": 1}}]
+                    }
+                }
+            }
+            encoded_config = urllib.parse.quote(json.dumps(chart_config))
+            chart_url = f"https://quickchart.io/chart?c={encoded_config}&w=600&h=250&bkg=white&v=2.9.4"
 
             # Format logs for template
             log_list = []
@@ -208,12 +238,6 @@ class AdherenceReportExportView(APIView):
                     @page {{
                         size: letter;
                         margin: 0.5in;
-                        @bottom-right {{
-                            content: "Page " counter(page) " of " counter(pages);
-                            font-family: Arial, sans-serif;
-                            font-size: 8pt;
-                            color: #64748b;
-                        }}
                     }}
                     body {{
                         font-family: Arial, sans-serif;
@@ -225,15 +249,17 @@ class AdherenceReportExportView(APIView):
                         width: 100%;
                         border-collapse: collapse;
                         margin-bottom: 20px;
+                        border-bottom: 3px solid #0B6E7A;
+                        padding-bottom: 10px;
                     }}
                     .header-logo {{
-                        font-size: 22pt;
+                        font-size: 24pt;
                         font-weight: bold;
-                        color: #4f46e5;
+                        color: #0B6E7A;
                     }}
                     .header-title {{
                         text-align: right;
-                        font-size: 13pt;
+                        font-size: 14pt;
                         font-weight: bold;
                         color: #0f172a;
                     }}
@@ -245,69 +271,87 @@ class AdherenceReportExportView(APIView):
                     .info-table {{
                         width: 100%;
                         border-collapse: collapse;
-                        background-color: #f8fafc;
-                        border: 1px solid #e2e8f0;
+                        background-color: #F8FAFC;
+                        border: 1px solid #E2E8F0;
+                        border-radius: 8px;
                         margin-bottom: 20px;
                     }}
                     .info-td {{
-                        padding: 10px;
-                        font-size: 9pt;
+                        padding: 12px;
+                        font-size: 10pt;
                         color: #334155;
                         width: 50%;
                     }}
                     .section-title {{
-                        font-size: 12pt;
+                        font-size: 13pt;
                         font-weight: bold;
                         color: #0f172a;
-                        border-bottom: 2px solid #e2e8f0;
-                        padding-bottom: 4px;
-                        margin-bottom: 12px;
-                        margin-top: 20px;
+                        border-bottom: 2px solid #E2E8F0;
+                        padding-bottom: 6px;
+                        margin-bottom: 15px;
+                        margin-top: 25px;
                     }}
                     .kpi-table {{
                         width: 100%;
-                        border-collapse: collapse;
-                        margin-bottom: 20px;
+                        border-collapse: separate;
+                        border-spacing: 10px 0;
+                        margin-bottom: 25px;
                     }}
                     .kpi-card {{
-                        background-color: #f1f5f9;
-                        border: 1px solid #cbd5e1;
-                        padding: 12px;
+                        background-color: #F1F5F9;
+                        border: 1px solid #CBD5E1;
+                        border-radius: 8px;
+                        padding: 15px;
                         text-align: center;
+                        width: 25%;
                     }}
                     .kpi-value {{
-                        font-size: 16pt;
+                        font-size: 18pt;
                         font-weight: bold;
-                        color: #4f46e5;
+                        color: #0B6E7A;
+                        margin-bottom: 5px;
                     }}
                     .kpi-label {{
-                        font-size: 7.5pt;
+                        font-size: 8pt;
                         font-weight: bold;
                         color: #475569;
                         text-transform: uppercase;
+                        letter-spacing: 1px;
+                    }}
+                    .chart-container {{
+                        text-align: center;
+                        margin-bottom: 30px;
+                        padding: 15px;
+                        background-color: white;
+                        border: 1px solid #E2E8F0;
+                        border-radius: 8px;
                     }}
                     .data-table {{
                         width: 100%;
                         border-collapse: collapse;
-                        margin-bottom: 16px;
+                        margin-bottom: 20px;
                     }}
                     .data-table th {{
-                        background-color: #4f46e5;
+                        background-color: #0B6E7A;
                         color: #ffffff;
-                        font-size: 8.5pt;
+                        font-size: 9pt;
                         font-weight: bold;
                         text-align: left;
-                        padding: 6px 8px;
+                        padding: 8px 10px;
                     }}
                     .data-table td {{
-                        font-size: 8pt;
-                        border-bottom: 1px solid #e2e8f0;
-                        padding: 6px 8px;
+                        font-size: 8.5pt;
+                        border-bottom: 1px solid #E2E8F0;
+                        padding: 8px 10px;
+                    }}
+                    .data-table tr:nth-child(even) {{
+                        background-color: #F8FAFC;
                     }}
                     .status-badge {{
                         font-weight: bold;
                         font-size: 7.5pt;
-                        padding: 2px 6px;
+                        padding: 3px 8px;
+                        border-radius: 4px;
                     }}
                     .status-taken {{
                         color: #15803d;
@@ -341,24 +385,29 @@ class AdherenceReportExportView(APIView):
                 <div class="section-title">Metrics Dashboard</div>
                 <table class="kpi-table">
                     <tr>
-                        <td class="kpi-card" style="width: 25%;">
-                            <div class="kpi-value">{summary['adherence_pct']}%</div>
+                        <td class="kpi-card">
+                            <div class="kpi-value">{summary.get('adherence_pct', 0)}%</div>
                             <div class="kpi-label">Adherence Score</div>
                         </td>
-                        <td class="kpi-card" style="width: 25%;">
-                            <div class="kpi-value">{summary['total_scheduled']}</div>
+                        <td class="kpi-card">
+                            <div class="kpi-value">{summary.get('total_scheduled', 0)}</div>
                             <div class="kpi-label">Total Doses</div>
                         </td>
-                        <td class="kpi-card" style="width: 25%;">
-                            <div class="kpi-value">{summary['taken']}</div>
+                        <td class="kpi-card">
+                            <div class="kpi-value">{summary.get('taken', 0)}</div>
                             <div class="kpi-label">Taken Doses</div>
                         </td>
-                        <td class="kpi-card" style="width: 25%;">
-                            <div class="kpi-value">{summary['missed']}</div>
+                        <td class="kpi-card">
+                            <div class="kpi-value">{summary.get('missed', 0)}</div>
                             <div class="kpi-label">Missed Doses</div>
                         </td>
                     </tr>
                 </table>
+
+                <div class="section-title">Adherence Timeline (Last {len(chart_data)} Days)</div>
+                <div class="chart-container">
+                    <img src="{chart_url}" width="600" height="250" />
+                </div>
 
                 <div class="section-title">Medication Breakdown</div>
                 <table class="data-table">
@@ -388,7 +437,7 @@ class AdherenceReportExportView(APIView):
             if not breakdown_list:
                 html_content += """
                         <tr>
-                            <td colspan="5" style="text-align: center; color: #64748b; padding: 12px;">No active clinical schedules for this period.</td>
+                            <td colspan="5" style="text-align: center; color: #64748b; padding: 15px;">No active clinical schedules for this period.</td>
                         </tr>
                 """
 
@@ -426,7 +475,7 @@ class AdherenceReportExportView(APIView):
             if not log_list:
                 html_content += """
                         <tr>
-                            <td colspan="6" style="text-align: center; color: #64748b; padding: 12px;">No history logs found for this period.</td>
+                            <td colspan="6" style="text-align: center; color: #64748b; padding: 15px;">No history logs found for this period.</td>
                         </tr>
                 """
 
@@ -475,14 +524,17 @@ class AdherenceReportExportView(APIView):
                         )
                         msg.attach_alternative(email_html, 'text/html')
                         msg.attach(f'adherence_report_{days}d.pdf', pdf_bytes, 'application/pdf')
-                        msg.send(fail_silently=True)
+                        # Do NOT fail silently. We need to raise the exception to see what's wrong if email fails.
+                        msg.send(fail_silently=False)
                 except Exception as e:
                     logger.error(f"Failed to send adherence report email for patient {patient.id}: {e}")
+                    # If email fails, we log it but STILL RETURN the PDF so download doesn't break!
 
                 response = HttpResponse(pdf_bytes, content_type='application/pdf')
                 response['Content-Disposition'] = f'attachment; filename="adherence_report_{days}d.pdf"'
                 return response
 
+            logger.error(f"PDF generation failed: {pisa_status.err}")
             return APIResponse.error('Failed to generate PDF document.')
 
         return APIResponse.success(DoseLogSerializer(logs[:500], many=True).data)

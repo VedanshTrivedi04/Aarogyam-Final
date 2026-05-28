@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_filters',
     'drf_spectacular',
+    'anymail', # added for HTTP email sending
     'django_celery_beat',
     'django_celery_results',
 
@@ -201,7 +202,7 @@ SENDGRID_API_KEY    = os.environ.get('SENDGRID_API_KEY', '')
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', 'AIzaSyAaHAE2MVl1Lrf48O0KJ7-L7MtXWkNgojY')
 DEFAULT_FROM_EMAIL  = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@medadhere.com')
 
-# SMTP / Gmail Settings
+# SMTP / HTTP Email Settings
 EMAIL_BACKEND       = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
 EMAIL_HOST          = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT          = int(os.environ.get('EMAIL_PORT', 587))
@@ -209,6 +210,19 @@ EMAIL_USE_TLS       = os.environ.get('EMAIL_USE_TLS', 'True').lower() == 'true'
 EMAIL_HOST_USER     = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 EMAIL_TIMEOUT       = 8   # prevents SMTP from hanging HTTP requests if Gmail is slow
+
+# Bypass SMTP on Hugging Face / Vercel using Anymail HTTP API
+ANYMAIL = {}
+if SENDGRID_API_KEY:
+    EMAIL_BACKEND = "anymail.backends.sendgrid.EmailBackend"
+    ANYMAIL["SENDGRID_API_KEY"] = SENDGRID_API_KEY
+elif os.environ.get('RESEND_API_KEY'):
+    EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
+    ANYMAIL["RESEND_API_KEY"] = os.environ.get('RESEND_API_KEY')
+elif os.environ.get('MAILGUN_API_KEY'):
+    EMAIL_BACKEND = "anymail.backends.mailgun.EmailBackend"
+    ANYMAIL["MAILGUN_API_KEY"] = os.environ.get('MAILGUN_API_KEY')
+    ANYMAIL["MAILGUN_SENDER_DOMAIN"] = os.environ.get('MAILGUN_SENDER_DOMAIN', '')
 
 # ─── Static / Media ──────────────────────────────────────────────────────────
 STATIC_URL  = '/static/'

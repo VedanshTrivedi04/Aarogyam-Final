@@ -320,10 +320,22 @@ class CaregiverPatientAdherenceExportView(APIView):
 
     def get(self, request, patient_id):
         """GET /api/v1/caregivers/patients/{id}/adherence/export/"""
-        caregiver = get_caregiver_or_404(request.user)
-        link = get_object_or_404(
-            PatientCaregiverLink, patient__id=patient_id, caregiver=caregiver, is_active=True
-        )
+        print(f"DEBUG: Entering CaregiverPatientAdherenceExportView for patient_id: {patient_id}")
+        try:
+            caregiver = get_caregiver_or_404(request.user)
+            print(f"DEBUG: Found caregiver: {caregiver.id}")
+        except Exception as e:
+            print(f"DEBUG: Failed to get caregiver: {e}")
+            raise
+            
+        try:
+            link = get_object_or_404(
+                PatientCaregiverLink, patient__id=patient_id, caregiver=caregiver, is_active=True
+            )
+            print(f"DEBUG: Found link: {link.id}")
+        except Exception as e:
+            print(f"DEBUG: Failed to find active link for patient {patient_id} and caregiver {caregiver.id}: {e}")
+            raise
         # Delegate to the patient-level view logic or duplicate it here.
         # Since AdherenceReportExportView is complex, it's better to just reuse its logic.
         from apps.scheduling.views.adherence import AdherenceReportExportView
@@ -336,7 +348,7 @@ class CaregiverPatientAdherenceExportView(APIView):
         
         patient = link.patient
         days = min(int(request.query_params.get('days', 30)), 365)
-        fmt = request.query_params.get('format', 'json')
+        fmt = request.query_params.get('export_format', request.query_params.get('format', 'json'))
 
         from django.utils import timezone
         import datetime
@@ -377,9 +389,39 @@ class CaregiverPatientAdherenceExportView(APIView):
             from django.http import HttpResponse
             from apps.scheduling.services import AdherenceReportService
             from apps.scheduling.serializers import DoseLogSerializer
+            import urllib.parse
+            import json
 
             summary = AdherenceReportService.get_summary(patient, days=days)
             breakdown = AdherenceReportService.get_medication_breakdown(patient, days=days)
+            timeline = AdherenceReportService.get_timeline(patient, days=days)
+
+            # Generate QuickChart URL for the timeline (last 14 days for readability)
+            chart_data = timeline[-14:] if len(timeline) > 14 else timeline
+            labels = [d['date'][-5:] for d in chart_data] # Just MM-DD
+            taken_data = [d.get('taken', 0) for d in chart_data]
+            missed_data = [d.get('missed', 0) for d in chart_data]
+
+            chart_config = {
+                "type": "bar",
+                "data": {
+                    "labels": labels,
+                    "datasets": [
+                        {"label": "Taken", "data": taken_data, "backgroundColor": "#0B6E7A"},
+                        {"label": "Missed", "data": missed_data, "backgroundColor": "#FF6B6B"}
+                    ]
+                },
+                "options": {
+                    "title": {"display": False},
+                    "legend": {"position": "bottom"},
+                    "scales": {
+                        "xAxes": [{"stacked": True, "gridLines": {"display": False}}],
+                        "yAxes": [{"stacked": True, "ticks": {"beginAtZero": True, "stepSize": 1}}]
+                    }
+                }
+            }
+            encoded_config = urllib.parse.quote(json.dumps(chart_config))
+            chart_url = f"https://quickchart.io/chart?c={encoded_config}&w=600&h=250&bkg=white&v=2.9.4"
 
             log_list = []
             for log in logs[:200]:
@@ -417,32 +459,133 @@ class CaregiverPatientAdherenceExportView(APIView):
                     @page {{
                         size: letter;
                         margin: 0.5in;
-                        @bottom-right {{
-                            content: "Page " counter(page) " of " counter(pages);
-                            font-family: Arial, sans-serif;
-                            font-size: 8pt;
-                            color: #64748b;
-                        }}
                     }}
-                    body {{ font-family: Arial, sans-serif; color: #1e293b; font-size: 10pt; line-height: 1.5; }}
-                    .header-table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; }}
-                    .header-logo {{ font-size: 22pt; font-weight: bold; color: #4f46e5; }}
-                    .header-title {{ text-align: right; font-size: 13pt; font-weight: bold; color: #0f172a; }}
-                    .header-sub {{ text-align: right; font-size: 9pt; color: #64748b; }}
-                    .info-table {{ width: 100%; border-collapse: collapse; background-color: #f8fafc; border: 1px solid #e2e8f0; margin-bottom: 20px; }}
-                    .info-td {{ padding: 10px; font-size: 9pt; color: #334155; width: 50%; }}
-                    .section-title {{ font-size: 12pt; font-weight: bold; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 12px; margin-top: 20px; }}
-                    .kpi-table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; }}
-                    .kpi-card {{ background-color: #f1f5f9; border: 1px solid #cbd5e1; padding: 12px; text-align: center; }}
-                    .kpi-value {{ font-size: 16pt; font-weight: bold; color: #4f46e5; }}
-                    .kpi-label {{ font-size: 7.5pt; font-weight: bold; color: #475569; text-transform: uppercase; }}
-                    .data-table {{ width: 100%; border-collapse: collapse; margin-bottom: 16px; }}
-                    .data-table th {{ background-color: #4f46e5; color: #ffffff; font-size: 8.5pt; font-weight: bold; text-align: left; padding: 6px 8px; }}
-                    .data-table td {{ font-size: 8pt; border-bottom: 1px solid #e2e8f0; padding: 6px 8px; }}
-                    .status-badge {{ font-weight: bold; font-size: 7.5pt; padding: 2px 6px; }}
-                    .status-taken {{ color: #15803d; background-color: #dcfce7; }}
-                    .status-missed {{ color: #b91c1c; background-color: #fee2e2; }}
-                    .status-skipped {{ color: #b45309; background-color: #fef3c7; }}
+                    body {{
+                        font-family: Arial, sans-serif;
+                        color: #1e293b;
+                        font-size: 10pt;
+                        line-height: 1.5;
+                    }}
+                    .header-table {{
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-bottom: 20px;
+                        border-bottom: 3px solid #0B6E7A;
+                        padding-bottom: 10px;
+                    }}
+                    .header-logo {{
+                        font-size: 24pt;
+                        font-weight: bold;
+                        color: #0B6E7A;
+                    }}
+                    .header-title {{
+                        text-align: right;
+                        font-size: 14pt;
+                        font-weight: bold;
+                        color: #0f172a;
+                    }}
+                    .header-sub {{
+                        text-align: right;
+                        font-size: 9pt;
+                        color: #64748b;
+                    }}
+                    .info-table {{
+                        width: 100%;
+                        border-collapse: collapse;
+                        background-color: #F8FAFC;
+                        border: 1px solid #E2E8F0;
+                        border-radius: 8px;
+                        margin-bottom: 20px;
+                    }}
+                    .info-td {{
+                        padding: 12px;
+                        font-size: 10pt;
+                        color: #334155;
+                        width: 50%;
+                    }}
+                    .section-title {{
+                        font-size: 13pt;
+                        font-weight: bold;
+                        color: #0f172a;
+                        border-bottom: 2px solid #E2E8F0;
+                        padding-bottom: 6px;
+                        margin-bottom: 15px;
+                        margin-top: 25px;
+                    }}
+                    .kpi-table {{
+                        width: 100%;
+                        border-collapse: separate;
+                        border-spacing: 10px 0;
+                        margin-bottom: 25px;
+                    }}
+                    .kpi-card {{
+                        background-color: #F1F5F9;
+                        border: 1px solid #CBD5E1;
+                        border-radius: 8px;
+                        padding: 15px;
+                        text-align: center;
+                        width: 25%;
+                    }}
+                    .kpi-value {{
+                        font-size: 18pt;
+                        font-weight: bold;
+                        color: #0B6E7A;
+                        margin-bottom: 5px;
+                    }}
+                    .kpi-label {{
+                        font-size: 8pt;
+                        font-weight: bold;
+                        color: #475569;
+                        text-transform: uppercase;
+                        letter-spacing: 1px;
+                    }}
+                    .chart-container {{
+                        text-align: center;
+                        margin-bottom: 30px;
+                        padding: 15px;
+                        background-color: white;
+                        border: 1px solid #E2E8F0;
+                        border-radius: 8px;
+                    }}
+                    .data-table {{
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-bottom: 20px;
+                    }}
+                    .data-table th {{
+                        background-color: #0B6E7A;
+                        color: #ffffff;
+                        font-size: 9pt;
+                        font-weight: bold;
+                        text-align: left;
+                        padding: 8px 10px;
+                    }}
+                    .data-table td {{
+                        font-size: 8.5pt;
+                        border-bottom: 1px solid #E2E8F0;
+                        padding: 8px 10px;
+                    }}
+                    .data-table tr:nth-child(even) {{
+                        background-color: #F8FAFC;
+                    }}
+                    .status-badge {{
+                        font-weight: bold;
+                        font-size: 7.5pt;
+                        padding: 3px 8px;
+                        border-radius: 4px;
+                    }}
+                    .status-taken {{
+                        color: #15803d;
+                        background-color: #dcfce7;
+                    }}
+                    .status-missed {{
+                        color: #b91c1c;
+                        background-color: #fee2e2;
+                    }}
+                    .status-skipped {{
+                        color: #b45309;
+                        background-color: #fef3c7;
+                    }}
                 </style>
             </head>
             <body>
@@ -463,24 +606,29 @@ class CaregiverPatientAdherenceExportView(APIView):
                 <div class="section-title">Metrics Dashboard</div>
                 <table class="kpi-table">
                     <tr>
-                        <td class="kpi-card" style="width: 25%;">
-                            <div class="kpi-value">{summary['adherence_pct']}%</div>
+                        <td class="kpi-card">
+                            <div class="kpi-value">{summary.get('adherence_pct', 0)}%</div>
                             <div class="kpi-label">Adherence Score</div>
                         </td>
-                        <td class="kpi-card" style="width: 25%;">
-                            <div class="kpi-value">{summary['total_scheduled']}</div>
+                        <td class="kpi-card">
+                            <div class="kpi-value">{summary.get('total_scheduled', 0)}</div>
                             <div class="kpi-label">Total Doses</div>
                         </td>
-                        <td class="kpi-card" style="width: 25%;">
-                            <div class="kpi-value">{summary['taken']}</div>
+                        <td class="kpi-card">
+                            <div class="kpi-value">{summary.get('taken', 0)}</div>
                             <div class="kpi-label">Taken Doses</div>
                         </td>
-                        <td class="kpi-card" style="width: 25%;">
-                            <div class="kpi-value">{summary['missed']}</div>
+                        <td class="kpi-card">
+                            <div class="kpi-value">{summary.get('missed', 0)}</div>
                             <div class="kpi-label">Missed Doses</div>
                         </td>
                     </tr>
                 </table>
+
+                <div class="section-title">Adherence Timeline (Last {len(chart_data)} Days)</div>
+                <div class="chart-container">
+                    <img src="{chart_url}" width="600" height="250" />
+                </div>
 
                 <div class="section-title">Medication Breakdown</div>
                 <table class="data-table">
@@ -510,7 +658,7 @@ class CaregiverPatientAdherenceExportView(APIView):
             if not breakdown_list:
                 html_content += """
                         <tr>
-                            <td colspan="5" style="text-align: center; color: #64748b; padding: 12px;">No active clinical schedules for this period.</td>
+                            <td colspan="5" style="text-align: center; color: #64748b; padding: 15px;">No active clinical schedules for this period.</td>
                         </tr>
                 """
 
@@ -548,7 +696,7 @@ class CaregiverPatientAdherenceExportView(APIView):
             if not log_list:
                 html_content += """
                         <tr>
-                            <td colspan="6" style="text-align: center; color: #64748b; padding: 12px;">No history logs found for this period.</td>
+                            <td colspan="6" style="text-align: center; color: #64748b; padding: 15px;">No history logs found for this period.</td>
                         </tr>
                 """
 
@@ -562,10 +710,50 @@ class CaregiverPatientAdherenceExportView(APIView):
             result = BytesIO()
             pisa_status = pisa.pisaDocument(BytesIO(html_content.encode("UTF-8")), result)
             if not pisa_status.err:
-                response = HttpResponse(result.getvalue(), content_type='application/pdf')
+                pdf_bytes = result.getvalue()
+
+                # Send email with PDF attachment
+                from django.core.mail import EmailMultiAlternatives
+                from django.template.loader import render_to_string
+                from django.conf import settings
+                import logging
+                logger = logging.getLogger('medadhere')
+
+                try:
+                    # Collect emails: Patient + Caregivers
+                    recipient_emails = [patient.user.email] if patient.user.email else []
+                    caregivers = patient.caregiver_links.select_related('caregiver__user').all()
+                    for c_link in caregivers:
+                        if c_link.caregiver.user.email:
+                            recipient_emails.append(c_link.caregiver.user.email)
+                    
+                    recipient_emails = list(set(recipient_emails))
+                    
+                    if recipient_emails:
+                        date_range = f"{since.strftime('%B %d, %Y')} to {timezone.now().strftime('%B %d, %Y')}"
+                        email_html = render_to_string('emails/adherence_report_email.html', {
+                            'patient_name': patient.user.full_name or patient.user.username,
+                            'days': days,
+                            'date_range': date_range
+                        })
+                        
+                        msg = EmailMultiAlternatives(
+                            subject=f"Medication Adherence Report - {patient.user.full_name or patient.user.username}",
+                            body=f"Please find attached the adherence report for the last {days} days.",
+                            from_email=settings.DEFAULT_FROM_EMAIL,
+                            to=recipient_emails,
+                        )
+                        msg.attach_alternative(email_html, 'text/html')
+                        msg.attach(f'adherence_report_{days}d.pdf', pdf_bytes, 'application/pdf')
+                        msg.send(fail_silently=False)
+                except Exception as e:
+                    logger.error(f"Failed to send adherence report email for patient {patient.id}: {e}")
+
+                response = HttpResponse(pdf_bytes, content_type='application/pdf')
                 response['Content-Disposition'] = f'attachment; filename="adherence_report_{days}d.pdf"'
                 return response
 
+            logger.error(f"PDF generation failed: {pisa_status.err}")
             return APIResponse.error('Failed to generate PDF document.')
 
         from apps.scheduling.serializers import DoseLogSerializer

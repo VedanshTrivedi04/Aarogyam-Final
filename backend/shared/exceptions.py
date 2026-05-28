@@ -9,6 +9,10 @@ def custom_exception_handler(exc, context):
     """
     Catch DRF exceptions and convert them to our standard APIResponse format.
     """
+    import traceback
+    print("DEBUG EXCEPTION:", type(exc), exc)
+    traceback.print_exception(type(exc), exc, exc.__traceback__)
+    
     response = exception_handler(exc, context)
 
     if response is not None:
