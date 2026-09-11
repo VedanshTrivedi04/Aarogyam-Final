@@ -132,6 +132,36 @@ float hw_getWeightGrams() {
   return w;
 }
 
+/**
+ * Median-of-5 reading. The whole dose decision rests on these grams, and a
+ * single averaged sample right after the stepper moves can be skewed by
+ * residual carousel wobble. A median throws out those spikes; a mean folds
+ * them in.
+ */
+float hw_getStableWeightGrams() {
+  const int N = 5;
+  float samples[N];
+
+  for (int i = 0; i < N; i++) {
+    samples[i] = hw_getWeightGrams();
+    vTaskDelay(pdMS_TO_TICKS(120));
+  }
+
+  for (int i = 1; i < N; i++) {              // insertion sort, N is tiny
+    float key = samples[i];
+    int j = i - 1;
+    while (j >= 0 && samples[j] > key) {
+      samples[j + 1] = samples[j];
+      j--;
+    }
+    samples[j + 1] = key;
+  }
+
+  float median = samples[N / 2];
+  Serial.printf("[HW] Stable weight: %.2f g\n", median);
+  return median;
+}
+
 void hw_tareLoadCell() {
   loadCell.tare();
   Serial.println("[HW] Load cell tared");
@@ -191,6 +221,43 @@ String hw_rtcGetISO() {
     return String(buf);
   }
   return "";
+}
+
+/**
+ * Current local hour/minute. Returns false if no clock source is usable —
+ * the scheduler must not fire doses off a garbage time.
+ */
+bool hw_rtcGetHourMinute(int& hour, int& minute) {
+  if (rtcAvailable) {
+    DateTime now = rtc.now();
+    if (now.year() >= 2024) {       // sane clock (DS3231 reads 2000 unset)
+      hour = now.hour();
+      minute = now.minute();
+      return true;
+    }
+  }
+  struct tm t;
+  if (getLocalTime(&t, 500) && (t.tm_year + 1900) >= 2024) {
+    hour = t.tm_hour;
+    minute = t.tm_min;
+    return true;
+  }
+  return false;
+}
+
+/** Local date as YYYYMMDD, or 0 if no clock source. Used for day rollover. */
+uint32_t hw_rtcGetYYYYMMDD() {
+  if (rtcAvailable) {
+    DateTime now = rtc.now();
+    if (now.year() >= 2024) {
+      return now.year() * 10000UL + now.month() * 100UL + now.day();
+    }
+  }
+  struct tm t;
+  if (getLocalTime(&t, 500) && (t.tm_year + 1900) >= 2024) {
+    return (t.tm_year + 1900) * 10000UL + (t.tm_mon + 1) * 100UL + t.tm_mday;
+  }
+  return 0;
 }
 
 bool hw_rtcIsMidnight() {

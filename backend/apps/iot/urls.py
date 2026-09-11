@@ -16,6 +16,8 @@ from .views import (
     GateEventView, WeightReadingView,
     DoseHistoryView, MissedDoseView, CaregiverUnlockView, DoseAlertsView,
     SyncTimeView,
+    # ── Autonomous-device endpoints ──────────────────────────────
+    DeviceConfigView, EventBatchIngestView, FillMeasureView,
 )
 
 urlpatterns = [
@@ -23,6 +25,15 @@ urlpatterns = [
     path('events/',    DeviceEventIngestView.as_view(),  name='iot-event-ingest'),
     path('heartbeat/', DeviceHeartbeatView.as_view(),    name='iot-heartbeat'),
     path('devices/<uuid:device_id>/commands/', DeviceCommandPollView.as_view(), name='iot-command-poll'),
+
+    # ── Autonomous-device endpoints (X-Device-Key) ──────────────
+    # Versioned config bundle: the device caches this and drives its own
+    # RTC schedule from it, so there is no periodic schedule poll.
+    path('devices/<uuid:device_id>/config/', DeviceConfigView.as_view(), name='iot-device-config'),
+    # Flush of the device's offline NVS event queue.
+    path('events/batch/', EventBatchIngestView.as_view(), name='iot-event-batch'),
+    # Guided fill step — device-wide cumulative weight subtraction.
+    path('devices/<uuid:device_id>/fill/measure/', FillMeasureView.as_view(), name='iot-fill-measure'),
 
     # ── New firmware endpoints (X-Device-Key) ───────────────────
     path('events/gate-event/',    GateEventView.as_view(),    name='iot-gate-event'),

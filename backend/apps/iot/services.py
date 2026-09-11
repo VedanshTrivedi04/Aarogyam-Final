@@ -178,9 +178,18 @@ def handle_heartbeat(device: Device, event: DeviceEvent, payload: dict) -> dict:
         device_version is None or int(device_version) != device.schedule_version
     )
 
-    pending_commands = DeviceCommand.objects.filter(
-        device=device, status='PENDING', expires_at__gt=timezone.now(),
-    ).count()
+    live_commands = DeviceCommand.objects.filter(
+        device=device, status__in=('PENDING', 'SENT'), expires_at__gt=timezone.now(),
+    )
+    pending_commands = live_commands.filter(status='PENDING').count()
+
+    # Other apps (clinical reschedules, iot.tasks) queue SYNC_SCHEDULE without
+    # bumping schedule_version, so the version check alone would miss them.
+    # SYNC_CONFIG is deliberately excluded: bump_schedule_version always
+    # queues one alongside a bump, so flagging it here would make every
+    # heartbeat stale until the command expired.
+    if not config_stale and live_commands.filter(command_type='SYNC_SCHEDULE').exists():
+        config_stale = True
 
     now = timezone.now()
     result: dict = {

@@ -745,6 +745,9 @@ class DispenserCompartmentSetupView(APIView):
                 comp.save(update_fields=update_fields)
             compartments.append(comp)
 
+        from .config_service import bump_schedule_version
+        bump_schedule_version(device, reason='compartment_setup')
+
         return APIResponse.success(
             PhysicalCompartmentListSerializer(compartments, many=True).data,
             status=201,
@@ -778,25 +781,17 @@ class DispenserUpdateSlotTimeView(APIView):
         comp.scheduled_time = time_str
         comp.save(update_fields=['scheduled_time'])
 
-        # Notify device to re-sync schedule
-        DeviceCommand.objects.create(
-            device=device,
-            command_type='SYNC_SCHEDULE',
-            payload={
-                'reason': 'slot_time_updated',
-                'compartment': compartment_num,
-                'new_time': time_str,
-                'time_slot': comp.time_slot,
-            },
-            issued_by=request.user,
-            expires_at=timezone.now() + timedelta(hours=24),
-        )
+        # Invalidate the device's cached bundle — it schedules from this time
+        # locally, so it must pick up the new value before the slot comes round.
+        from .config_service import bump_schedule_version
+        version = bump_schedule_version(device, reason='slot_time_updated')
 
         return APIResponse.success({
             'compartment_number': comp.compartment_number,
             'time_slot': comp.time_slot,
             'scheduled_time': comp.scheduled_time,
-            'message': f'Alarm time updated to {time_str}. Device will sync on next poll.',
+            'schedule_version': version,
+            'message': f'Alarm time updated to {time_str}. Device syncs immediately if online.',
         })
 
 
@@ -914,19 +909,9 @@ class DispenserAddMedicineView(APIView):
             # Non-fatal — don't block the API call
             pass
 
-        # Notify device about new medicine so it syncs its schedule immediately
-        DeviceCommand.objects.create(
-            device=device,
-            command_type='SYNC_SCHEDULE',
-            payload={
-                'reason': 'medicine_added',
-                'compartment': compartment_num,
-                'medicine': medicine_name,
-                'time_slot': compartment.time_slot,
-            },
-            issued_by=request.user,
-            expires_at=timezone.now() + timedelta(hours=24),
-        )
+        # Invalidate the cached bundle so the device picks up the new medicine
+        from .config_service import bump_schedule_version
+        bump_schedule_version(device, reason='medicine_added')
 
         return APIResponse.success({
             'sub_compartment': SubCompartmentSerializer(sub).data,
@@ -1077,6 +1062,9 @@ class DispenserMedicineListView(APIView):
         compartment.expected_weight_grams = round(calculate_compartment_expected_weight(active_subs), 3)
         compartment.save(update_fields=['expected_weight_grams'])
 
+        from .config_service import bump_schedule_version
+        bump_schedule_version(device, reason='medicine_removed')
+
         return APIResponse.success({'message': f'{sub.medicine_name} removed from compartment.'})
 
 
@@ -1117,20 +1105,13 @@ class DispenserFillCompleteView(APIView):
             expires_at=timezone.now() + timedelta(minutes=5),
         )
 
-        DeviceCommand.objects.create(
-            device=device,
-            command_type='SYNC_SCHEDULE',
-            payload={
-                'reason': 'fill_complete',
-                'compartments_updated': updated,
-            },
-            issued_by=request.user,
-            expires_at=timezone.now() + timedelta(hours=24),
-        )
+        from .config_service import bump_schedule_version
+        version = bump_schedule_version(device, reason='fill_complete')
 
         return APIResponse.success({
             'message': 'Fill confirmed. Expected weights locked.',
             'compartments_updated': updated,
+            'schedule_version': version,
         })
 
 
@@ -1193,7 +1174,12 @@ class DispenserCurrentScheduleView(APIView):
             comp = manual_session.compartment
             active_subs = comp.sub_compartments.filter(is_active=True)
             return APIResponse.success({
+                # 'active' is what the firmware actually reads; 'has_dose' is
+                # kept for the dashboard. They must always agree.
+                'active': True,
                 'has_dose': True,
+                'gate_open_count': manual_session.gate_open_count,
+                'gate_locked': manual_session.is_gate_locked or device.is_gate_locked,
                 'compartment_number': comp.compartment_number,
                 'time_slot': comp.time_slot,
                 'voice_text': generate_voice_text(comp.time_slot, active_subs),
@@ -1225,6 +1211,7 @@ class DispenserCurrentScheduleView(APIView):
 
         if not active_slot:
             return APIResponse.success({
+                'active': False,
                 'has_dose': False,
                 'message': 'No dose scheduled for current time.',
                 'server_time': now.isoformat(),
@@ -1252,12 +1239,15 @@ class DispenserCurrentScheduleView(APIView):
         )
 
         return APIResponse.success({
+            'active': True,
             'has_dose': True,
             'compartment_number': comp.compartment_number,
             'time_slot': active_slot,
             'voice_text': voice_text,
             'display_text': display_text,
             'expected_weight_before': comp.current_balance_weight_grams,
+            'gate_open_count': session.gate_open_count,
+            'gate_locked': session.is_gate_locked or device.is_gate_locked,
             'session_id': str(session.id),
             'server_time': now.isoformat(),
             'trigger': 'scheduled',
@@ -1605,10 +1595,12 @@ class FillMeasureView(APIView):
     authentication_classes = [DeviceAPIKeyAuthentication]
     permission_classes = []
 
-    def post(self, request):
+    def post(self, request, device_id):
         device = request.auth
         if not device:
             return APIResponse.error("Missing or invalid X-Device-Key", status=401)
+        if str(device.id) != str(device_id):
+            return APIResponse.forbidden()
 
         compartment_num = request.data.get('compartment_number')
         weight_raw = request.data.get('total_weight_grams', request.data.get('weight_grams'))

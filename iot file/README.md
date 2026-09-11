@@ -1,4 +1,21 @@
-# MedAdhere ESP32 Firmware — Setup & Connection Guide
+# MedAdhere ESP32 Firmware v3.0 — Setup & Connection Guide
+
+## Kya badla hai (v2.1 → v3.0)
+
+Pehle **backend decide karta tha** ki dose ka time aaya ya nahi. ESP32 har 60
+second `schedule/current/` poll karta tha aur har 10 second commands poll karta
+tha — roughly **10,400 requests/day**, aur WiFi jaane par dispenser bekaar.
+
+Ab **device khud time owner hai**:
+
+- Backend ek baar **versioned config bundle** bhejta hai → ESP32 NVS flash mein cache karta hai
+- **DS3231 RTC** locally dose fire karta hai — koi network round-trip nahi
+- Commands **WebSocket** se push hote hain (10-second poll khatam)
+- WiFi down ho to bhi dose milta hai; events flash mein queue hote hain aur baad mein sync
+
+Steady state: **~200 requests/day**, aur command latency sub-second.
+
+---
 
 ## 📦 Required Libraries (Arduino IDE mein install karo)
 
@@ -8,9 +25,15 @@
 | ESP32Servo | `ESP32Servo` by Kevin Harrington | latest |
 | Adafruit SSD1306 | `Adafruit SSD1306` | latest |
 | Adafruit GFX | `Adafruit GFX Library` | latest |
-| **RTClib** | `RTClib` by Adafruit | **v2.x** ← NEW |
+| RTClib | `RTClib` by Adafruit | v2.x |
+| HX711 | `HX711` by bogde | latest |
+| DFPlayer Mini | `DFRobotDFPlayerMini` | latest |
+| **WebSockets** | `WebSockets` by **Markus Sattler** | **v2.4+** ← NEW in v3.0 |
 
-**Install karne ka step:** Arduino IDE → Tools → Manage Libraries → naam likhke install karo
+> ⚠️ WebSocket library ke bahut clones hain. **Markus Sattler (Links2004)** wala
+> hi install karo — baaki ke saath `WebSocketsClient.h` compile nahi hoga.
+
+**Install:** Arduino IDE → Tools → Manage Libraries → naam likhke install karo
 
 ---
 
@@ -32,15 +55,22 @@ Partition Scheme: Default 4MB with spiffs
 ESP32 Pin    →   Component
 ─────────────────────────────────────────
 ─ 28BYJ-48 Stepper (ULN2003) ────────────────────
-GPIO 18      →   ULN2003 IN1
-GPIO 19      →   ULN2003 IN2
-GPIO 23      →   ULN2003 IN3
-GPIO  5      →   ULN2003 IN4
-─ Servo (Lid) ────────────────────────────────
-GPIO 25      →   Servo Signal (lid)
+GPIO 13      →   ULN2003 IN1
+GPIO 12      →   ULN2003 IN2
+GPIO 14      →   ULN2003 IN3
+GPIO 27      →   ULN2003 IN4
+─ Servo (Gate) ───────────────────────────────
+GPIO 25      →   Servo Signal
 ─ HC-SR04 Ultrasonic ──────────────────────────
 GPIO 26      →   HC-SR04 TRIG
-GPIO 27      →   HC-SR04 ECHO
+GPIO 33      →   HC-SR04 ECHO
+─ HX711 Load Cell (1 kg) ──────────────────────
+GPIO 35      →   HX711 DOUT   (input-only pin)
+GPIO 18      →   HX711 SCK
+─ DFPlayer Mini MP3 ───────────────────────────
+GPIO 16      →   DFPlayer TX  (ESP32 RX2)
+GPIO 17      →   DFPlayer RX  (1kΩ resistor ke through)
+GPIO 15      →   DFPlayer BUSY (optional, LOW = playing)
 ─ I2C Bus (shared: OLED + DS3231 RTC) ─────────────
 GPIO 21      →   SDA (OLED + DS3231 — wired together)
 GPIO 22      →   SCL (OLED + DS3231 — wired together)
@@ -52,23 +82,32 @@ GPIO 34      →   Battery voltage divider (ADC)
 GND          →   All GND
 ```
 
-> ⚠️ **DS3231 Wiring Note:** DS3231 aur OLED dono GPIO 21/22 (I2C) share karte hain.
-> I2C addresses alag hain: OLED=0x3C, DS3231=0x68 — koi conflict nahi hoga.
+> ⚠️ **I2C:** DS3231 aur OLED dono GPIO 21/22 share karte hain.
+> Addresses alag hain (OLED=0x3C, DS3231=0x68) — conflict nahi hoga.
+
+> ⚠️ **Load cell placement:** Ek hi load cell **poore carousel ke neeche** hai,
+> isliye reading हमेशा **total weight** hoti hai — kisi single compartment ki
+> nahi. Backend running reference se subtract karke per-compartment weight
+> nikalta hai. Cell ko center mein mount karo warna rotation par reading shift hogi.
 
 ---
 
 ## 🚀 Backend Se Connect Karna
 
-### Step 1 — Docker backend chalu karo
+### Step 1 — Backend chalu karo (ASGI, WebSocket ke liye zaroori)
+
 ```bash
-cd medadhere_backend
+cd backend
 docker compose up -d
 ```
 
-### Step 2 — Device register karo (backend API se)
-Postman ya curl se ye run karo:
+> ⚠️ WebSocket ke liye **Daphne/ASGI** chahiye. `manage.py runserver` se
+> WebSocket kaam nahi karega — `daphne config.asgi:application` use karo.
+
+### Step 2 — Device register karo
+
 ```bash
-# Login as user
+# Login
 curl -X POST http://localhost:8000/api/v1/auth/login/ \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@medadhere.com","password":"admin123"}'
@@ -80,7 +119,8 @@ curl -X POST http://localhost:8000/api/v1/iot/devices/link/ \
   -d '{"device_name":"My Pill Dispenser","device_type":"CIRCULAR_PILL_DISPENSER"}'
 ```
 
-### Step 3 — Response se copy karo:
+### Step 3 — Response se copy karo
+
 ```json
 {
   "data": {
@@ -91,16 +131,29 @@ curl -X POST http://localhost:8000/api/v1/iot/devices/link/ \
 ```
 
 ### Step 4 — config.h update karo
+
 ```cpp
 #define WIFI_SSID      "YourWiFiName"
 #define WIFI_PASSWORD  "YourWiFiPassword"
-#define BACKEND_URL    "http://192.168.1.100:8000"  // apne PC ka IP
+#define BACKEND_HOST   "192.168.1.100"   // apne PC ka IP (NO http://, NO port)
+#define BACKEND_PORT   8000
 #define DEVICE_API_KEY "copy from step 3"
 #define DEVICE_ID      "copy from step 3"
 ```
 
-### Step 5 — Flash karo
-Arduino IDE mein `esp32_firmware.ino` kholo → **Upload** button dabao
+> ⚠️ v3.0 mein `BACKEND_HOST` aur `BACKEND_PORT` **alag** hain (WebSocket ko
+> host/port separately chahiye). `BACKEND_URL` inhi se ban jaata hai.
+
+### Step 5 — Compartments setup + medicines fill karo
+
+Dashboard se ya API se: compartments banao, medicine add karo, phir guided fill
+chalao. Har compartment fill karne ke baad load cell measure karta hai. Iske
+bina `enabled: false` rahega aur **dose fire nahi hoga** (jaan-boojh kar —
+bina measured weight ke verification impossible hai).
+
+### Step 6 — Flash karo
+
+Arduino IDE mein `esp32_firmware.ino` kholo → **Upload**
 
 ---
 
@@ -108,38 +161,41 @@ Arduino IDE mein `esp32_firmware.ino` kholo → **Upload** button dabao
 
 ```
 ESP32 Boot
-  └─ HW Init: OLED + DS3231 RTC (shared I2C)
-  └─ WiFi connect → NTP sync → RTC update
-  └─ POST /api/v1/iot/events/ {DEVICE_BOOT}
-       └─ Response: today's schedule (with priority + meal_dependency)
+  ├─ HW init: OLED + DS3231 + HX711 + DFPlayer
+  ├─ NVS se cached schedule + queued events restore   ← WiFi se PEHLE
+  ├─ WiFi connect → NTP sync → RTC update
+  ├─ WebSocket connect (command channel)
+  └─ GET /iot/devices/{id}/config/  → bundle NVS mein save
 
-Offline Mode (WiFi lost):
-  └─ RTC DS3231 provides accurate time (battery-backed)
-  └─ NVS flash cache provides last saved schedule
-  └─ WiFi retry every 15s (non-blocking)
-  └─ dispensed_today[] locks still work
+Every 10 min — POST /iot/heartbeat/
+  ├─ bhejta hai: battery, RSSI, schedule_version, rtc_time, queued_events
+  └─ wapas aata hai: config_stale, pending_commands, rtc_drift_seconds
+       └─ config_stale=true → sirf tab bundle dobara fetch karta hai
 
-Every 5 min (online):
-  └─ POST /api/v1/iot/heartbeat/
-       └─ Battery level, WiFi RSSI, hardware status
-       └─ Response: schedule_updated flag
+Commands (WebSocket push, sub-second)
+  SYNC_CONFIG / SYNC_SCHEDULE, TRIGGER_DOSE, GATE_LOCK, GATE_UNLOCK,
+  OPEN_GATE, START_FILL_MODE, NEXT_COMPARTMENT, END_FILL_MODE,
+  READ_FILL_WEIGHT, READ_WEIGHT, SYNC_TIME, RESET_FLAGS
+  └─ Socket down ho to 5-min HTTP poll safety net
 
-Every 30 sec (online):
-  └─ GET /api/v1/iot/devices/{id}/commands/
-       └─ Commands: SYNC_SCHEDULE, START_FILL_MODE,
-             NEXT_COMPARTMENT, END_FILL_MODE, RESET_FLAGS,
-             PREPARE_COMPARTMENT
+Dose Time (RTC-driven — network ki zaroorat nahi)
+  ├─ RTC slot match → session UUID banta hai → slot aaj ke liye lock
+  ├─ Stepper rotate → COMPARTMENT_ROTATED
+  ├─ Settle → baseline weight → DOSE_STARTED
+  ├─ Reminder audio + OLED + buzzer
+  ├─ Haath detect → gate open → HAND_DETECTED + LID_OPENED
+  ├─ Haath hataya → gate close → LID_CLOSED
+  └─ 3 s settle → after weight → WEIGHT_READING
+       └─ response mein dose_status → track 3 (taken) / 4 (missed)
 
-Dose Time (works online + offline with RTC):
-  └─ Stepper rotates → POST COMPARTMENT_ROTATED
-  └─ Lid opens      → POST LID_OPENED
-  └─ Hand detected  → POST HAND_DETECTED
-  └─ Lid closes     → POST LID_CLOSED
-  └─ 30s later      → POST DOSE_TAKEN (ya DOSE_TIMEOUT)
-  └─ Duplicate try  → POST DOSE_DUPLICATE_BLOCKED (firmware block)
+Offline Mode (WiFi gaya)
+  ├─ RTC + NVS cache se dose chalta rehta hai — patient ko dawai milti hai
+  ├─ Events flash queue mein jaate hain (RTC ka occurred_at ke saath)
+  ├─ OLED "Dose recorded / will sync" dikhata hai — taken/missed claim nahi
+  └─ WiFi wapas → POST /iot/events/batch/ → backend wahi weight math chalata hai
 
-Midnight (RTC-accurate):
-  └─ dispensed_today[12] array reset ho jaata hai
+Midnight (RTC date badalte hi)
+  └─ Per-day dispense locks clear (NVS mein persisted, reboot-safe)
 ```
 
 ---
@@ -151,8 +207,7 @@ Midnight (RTC-accurate):
 ipconfig | findstr IPv4
 
 # Output example: 192.168.1.100
-# Isko BACKEND_URL mein use karo:
-# #define BACKEND_URL "http://192.168.1.100:8000"
+# #define BACKEND_HOST "192.168.1.100"
 ```
 
 > ⚠️ ESP32 aur PC ek hi WiFi network pe hone chahiye!
@@ -161,24 +216,70 @@ ipconfig | findstr IPv4
 
 ## 🧪 Test karna (Serial Monitor se)
 
-Arduino IDE → Tools → Serial Monitor → 115200 baud
+Arduino IDE → Tools → Serial Monitor → **115200 baud**
 
-Aapko yeh dikhna chahiye:
+Healthy boot aisa dikhega:
+
 ```
-[BOOT] MedAdhere Pill Dispenser v1.1.0
-[HW] All hardware initialized OK
+[BOOT] MedAdhere Pill Dispenser v3.0.0
+[HW] HX711 initialized and tared
 [RTC] DS3231 OK: 08:15:30
+[DFPlayer] Ready — volume 25
+[HW] All hardware initialized
+[SCHED] Restored bundle v42 (4 compartments)
 [WiFi] Connected: 192.168.1.105
 [TIME] NTP synced: 08:15:31
-[RTC] Synced from NTP successfully
-[BOOT] Server response received
-[BOOT] Got 4 dose slots
-[SCHED] Saved 4 slots
-[HB] OK (battery=85%)
+[WS] Connecting to ws://192.168.1.100:8000
+[WS] Command channel connected
+[RTOS] Network task started on Core 0
+[RTOS] Motor task started on Core 1
+[RTOS] Sensor task started on Core 1
+[RTOS] Scheduler task started on Core 1
+[API] Config fetch → HTTP 200
+[SCHED] Bundle v42 loaded — 4 compartments
+[SCHED]   c1 08:00 ON  dose=10.00g
+[SCHED]   c2 09:00 ON  dose=15.00g
+[HB] battery=85% queued=0 ws=1
 ```
 
-Agar DS3231 nahi laga:
+Dose firing:
+
 ```
-[RTC] DS3231 NOT FOUND — using NTP only
+[SCHED] 08:00 matched compartment 1
+[DOSE] Starting scheduled dose: compartment 1 (session 3f2a...)
+[MOTOR] Rotating to compartment 1
+[HW] Stable weight: 380.00 g
+[DOSE] Baseline 380.00g — waiting for hand
+[SENSOR] Lid opened (open count=1)
+[SENSOR] Lid closed — weight check
+[HW] Stable weight: 370.00 g
+[SENSOR] After-dose weight: 370.00g (baseline 380.00g)
+[SENSOR] dose_status: taken
 ```
-Ye bhi kaam karega, but WiFi gaya toh time drift ho sakta hai.
+
+### Troubleshooting
+
+| Serial output | Matlab |
+|---|---|
+| `[RTC] DS3231 NOT FOUND — NTP only` | RTC wiring check karo. WiFi gaya to time drift hoga aur offline dosing bharosemand nahi rahegi. |
+| `[WS] Disconnected — will retry` | Backend ASGI pe nahi chal raha (`runserver` WebSocket support nahi karta), ya BACKEND_HOST galat hai. Commands 5-min poll se aayenge. |
+| `[SCHED] Cached bundle size mismatch — ignoring` | Firmware update ke baad struct layout badla. Normal — agla config fetch theek kar dega. |
+| `[SCHED] c1 08:00 OFF` | Us compartment mein measured medicine nahi hai. Fill flow chalao. |
+| `[EVQ] N queued event(s) restored` | Offline events pending hain, WiFi aane par flush honge. |
+| `[EVQ] Queue full — dropped oldest` | 24 se zyada events queue ho gaye — device bahut der offline tha. |
+| `[HW] Load cell not ready` | HX711 wiring. GPIO 35 input-only hai — DOUT hi wahan lagega, SCK nahi. |
+
+---
+
+## 📂 File Structure
+
+| File | Role |
+|---|---|
+| `esp32_firmware.ino` | State machine + 4 RTOS tasks + command handling |
+| `config.h` | Pins, WiFi, backend host/port, timing, policy defaults |
+| `hardware.h` | Peripheral drivers (stepper, servo, HX711, OLED, RTC, DFPlayer) |
+| `schedule.h` | Config bundle cache (NVS) + **RTC scheduler** + per-day locks |
+| `eventqueue.h` | NVS ring buffer — offline event durability |
+| `events.h` | Event emission; queues to flash when a POST fails |
+| `api.h` | HTTP transport (config, batch, heartbeat, fill measure) |
+| `wsclient.h` | WebSocket command channel + auto-reconnect |

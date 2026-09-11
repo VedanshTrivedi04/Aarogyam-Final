@@ -79,13 +79,14 @@ class DeviceCommandConsumer(AsyncJsonWebsocketConsumer):
     def _pending_commands(self):
         from .models import DeviceCommand
 
+        # Left PENDING deliberately: an ack is the only thing that clears a
+        # command, so one lost to a socket dying mid-delivery is re-sent on the
+        # next reconnect. The firmware dedupes on command_id.
         pending = list(
             DeviceCommand.objects.filter(
                 device=self.device, status='PENDING', expires_at__gt=timezone.now()
             ).order_by('created_at')
         )
-        if pending:
-            DeviceCommand.objects.filter(id__in=[c.id for c in pending]).update(status='SENT')
 
         return [
             {

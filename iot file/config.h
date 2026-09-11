@@ -16,25 +16,44 @@
 #define WIFI_RECONNECT_MS  15000
 
 // ── Backend ─────────────────────────────────────────────────
-#define BACKEND_URL       "http://10.98.188.253:8000"
+#define BACKEND_HOST      "10.98.188.253"
+#define BACKEND_PORT      8000
+#define BACKEND_URL       "http://" BACKEND_HOST ":8000"
 #define DEVICE_API_KEY    "GBfHHm3ZSwEo1MkzZSBTGrgWzXZeudFH7p2h4kbmhferTrfflRCdxyftuEF_nPvr"
 #define DEVICE_ID         "e214a30b-c919-4d23-b3f1-80557b756cdd"
 
 // ── API Endpoints ────────────────────────────────────────────
 // All device events go through a single standard endpoint (idempotent)
 #define API_EVENTS      "/api/v1/iot/events/"
+#define API_EVENT_BATCH "/api/v1/iot/events/batch/"
 #define API_HEARTBEAT   "/api/v1/iot/heartbeat/"
 #define API_COMMANDS    "/api/v1/iot/devices/" DEVICE_ID "/commands/"
 #define API_SYNC_TIME   "/api/v1/iot/sync/time/"
-#define API_SCHEDULE    "/api/v1/iot/devices/" DEVICE_ID "/dispenser/schedule/current/"
+#define API_CONFIG      "/api/v1/iot/devices/" DEVICE_ID "/config/"
+#define API_FILL_MEASURE "/api/v1/iot/devices/" DEVICE_ID "/fill/measure/"
+
+// ── WebSocket command channel ───────────────────────────────
+// Commands are pushed over this socket. The HTTP command poll below is only
+// a safety net for a dropped socket — it is NOT the primary path.
+#define WS_PATH  "/ws/iot/device/" DEVICE_ID "/?device_key=" DEVICE_API_KEY
+#define WS_RECONNECT_MS  10000
 
 // ── Timing ──────────────────────────────────────────────────
-#define HEARTBEAT_INTERVAL_MS    300000   // 5 min
-#define COMMAND_POLL_MS           10000   // 10 sec (fast poll for responsiveness)
-#define SCHEDULE_POLL_MS          60000   // 1 min
+// The device schedules its own doses from the RTC, so there is no schedule
+// poll at all. The heartbeat doubles as the config-reconciliation channel.
+#define HEARTBEAT_INTERVAL_MS    600000   // 10 min
+#define COMMAND_POLL_MS          300000   // 5 min — safety net only
+#define EVENT_FLUSH_MS            60000   // retry the offline event queue
+#define SCHEDULER_TICK_MS          1000   // RTC slot check
 #define HAND_DETECT_DIST_CM          15   // cm threshold for ultrasonic
 #define GATE_CLOSE_CONFIRM_MS      3000   // wait 3 s after lid close before weight read
+#define WEIGHT_SETTLE_MS           1500   // wait after rotation before baseline read
 #define DOSE_TIMEOUT_MS         3600000   // 1 hour — matches backend window
+
+// ── Scheduling policy defaults ──────────────────────────────
+// Overridden by the `policy` block in the backend config bundle.
+#define DEFAULT_DOSE_WINDOW_MIN      60   // gate stays available this long
+#define DEFAULT_CATCHUP_WINDOW_MIN   30   // fire a slot missed while powered off
 
 // ── 28BYJ-48 Stepper (ULN2003) ──────────────────────────────
 #define STEPPER_IN1   13
