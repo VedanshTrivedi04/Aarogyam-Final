@@ -81,47 +81,78 @@ def identify_missed_medicines(sub_compartments, weight_deficit: float) -> list:
 
 # ── Main weight processing pipeline ─────────────────────────────────────────
 
-def process_weight_reading(compartment, actual_weight: float) -> dict:
+def find_dose_session(compartment, session_uuid: str = None):
     """
-    Called when ESP32 sends a weight reading after gate close.
-    1. Records raw weight in WeightHistory.
-    2. Finds the active DoseSession for this compartment.
-    3. Calculates actual vs expected reduction.
-    4. Verifies dose status (taken/partial/missed).
-    5. Updates DoseSession and compartment running balance.
-    6. Returns full verification result dict.
+    Resolve the session a weight reading belongs to.
+
+    Prefer the device-minted UUID: an event replayed from the ESP32's offline
+    queue must land on the session it was produced for, not on whatever is
+    pending now. Falls back to the newest pending session for the compartment
+    (older firmware, or a reading triggered outside a dose).
     """
-    from .models import DoseSession, WeightHistory
+    from .models import DoseSession
 
-    # Always record the raw reading
-    WeightHistory.objects.create(
-        device=compartment.device,
-        compartment_number=compartment.compartment_number,
-        weight_grams=actual_weight,
-    )
+    if session_uuid:
+        session = DoseSession.objects.filter(device_session_uuid=session_uuid).first()
+        if session:
+            return session
 
-    sub_compartments = list(compartment.sub_compartments.filter(is_active=True))
-
-    active_session = (
+    return (
         DoseSession.objects.filter(compartment=compartment, dose_status='pending')
         .order_by('-created_at')
         .first()
     )
 
+
+def process_weight_reading(compartment, actual_weight: float,
+                           session_uuid: str = None, occurred_at=None) -> dict:
+    """
+    Called when the ESP32 reports the load cell total after the gate closes.
+
+    The cell sits under the whole carousel, so `actual_weight` is a DEVICE-WIDE
+    total, not this compartment's contents. The drop is attributed to this
+    compartment because its gate was the one open.
+
+    A reading with no matching session cannot be attributed to anything, so it
+    is recorded as TAMPER and no balance is touched.
+    """
+    from .models import DoseSession, WeightHistory
+
+    device = compartment.device
+
+    WeightHistory.objects.create(
+        device=device,
+        compartment_number=compartment.compartment_number,
+        weight_grams=actual_weight,
+    )
+
+    sub_compartments = list(compartment.sub_compartments.filter(is_active=True))
+    active_session = find_dose_session(compartment, session_uuid)
+
     if not active_session:
-        logger.warning(
-            "No pending DoseSession for compartment %s (device %s)",
-            compartment.compartment_number, compartment.device_id,
-        )
+        return _record_tamper(device, compartment, actual_weight, occurred_at)
+
+    if active_session.dose_status != 'pending':
+        # Duplicate flush of an already-verified session — replay the verdict
+        # instead of double-counting the weight drop.
         return {
-            'dose_status': 'unknown',
-            'error': 'no_active_session',
-            'current_weight': actual_weight,
+            'dose_status': active_session.dose_status,
+            'actual_reduction_grams': active_session.weight_reduction_actual,
+            'expected_reduction_grams': active_session.weight_reduction_expected,
+            'current_balance_grams': active_session.actual_weight_after,
+            'missed_medicines': [],
+            'session_id': str(active_session.id),
+            'duplicate': True,
         }
 
-    expected_before = active_session.expected_weight_before
-    actual_reduction = expected_before - actual_weight
-    expected_reduction = calculate_dose_expected_reduction(sub_compartments)
+    # Baseline measured by the device at dose start is the most trustworthy
+    # reference; the stored device total is the fallback.
+    reference = active_session.expected_weight_before or device.total_weight_grams
+    actual_reduction = max(reference - actual_weight, 0.0)
+    expected_reduction = (
+        active_session.weight_reduction_expected
+        or calculate_dose_expected_reduction(sub_compartments)
+    )
 
     dose_status = verify_dose(actual_reduction, expected_reduction)
 
@@ -131,21 +162,25 @@ def process_weight_reading(compartment, actual_weight: float) -> dict:
         if deficit > 0:
             missed_medicines = identify_missed_medicines(sub_compartments, deficit)
 
-    # Persist session result
     active_session.actual_weight_after = actual_weight
     active_session.weight_reduction_actual = round(actual_reduction, 3)
     active_session.weight_reduction_expected = round(expected_reduction, 3)
     active_session.dose_status = dose_status
-    active_session.completed_at = timezone.now()
+    active_session.completed_at = occurred_at or timezone.now()
     active_session.save()
 
-    # Update compartment running balance regardless (use actual reading)
-    compartment.current_balance_weight_grams = actual_weight
+    # Only this compartment lost weight, so only its content drops. The
+    # device-wide running reference becomes the reading we just took.
+    compartment.current_balance_weight_grams = max(
+        compartment.current_balance_weight_grams - actual_reduction, 0.0
+    )
     compartment.save(update_fields=['current_balance_weight_grams'])
 
-    # Trigger caregiver notifications for non-taken doses
+    device.total_weight_grams = actual_weight
+    device.save(update_fields=['total_weight_grams'])
+
     if dose_status in ('partial', 'missed'):
-        _notify_partial_or_missed(compartment.device, compartment.compartment_number,
+        _notify_partial_or_missed(device, compartment.compartment_number,
                                   dose_status, actual_reduction, expected_reduction,
                                   missed_medicines)
 
@@ -153,10 +188,145 @@ def process_weight_reading(compartment, actual_weight: float) -> dict:
         'dose_status': dose_status,
         'actual_reduction_grams': round(actual_reduction, 3),
         'expected_reduction_grams': round(expected_reduction, 3),
-        'current_balance_grams': actual_weight,
+        'compartment_balance_grams': round(compartment.current_balance_weight_grams, 3),
+        'device_total_grams': round(actual_weight, 3),
         'missed_medicines': missed_medicines,
         'session_id': str(active_session.id),
     }
+
+
+def _record_tamper(device, compartment, actual_weight: float, occurred_at=None) -> dict:
+    """
+    Weight moved with no dose session open. Could be a refill, a knock, or pills
+    removed off-schedule — all indistinguishable with one shared load cell.
+    Log and alert, but leave balances alone so the dose math stays trustworthy.
+    """
+    import uuid as _uuid
+
+    from .models import DeviceEvent
+
+    delta = round(device.total_weight_grams - actual_weight, 3)
+
+    DeviceEvent.objects.create(
+        device=device,
+        event_uuid=f'tamper-{_uuid.uuid4()}',
+        event_type='TAMPER',
+        compartment_num=compartment.compartment_number,
+        occurred_at=occurred_at,
+        raw_payload={
+            'reason': 'weight_change_without_active_session',
+            'reference_grams': round(device.total_weight_grams, 3),
+            'reading_grams': round(actual_weight, 3),
+            'delta_grams': delta,
+        },
+    )
+
+    logger.warning(
+        "TAMPER on device %s compartment %s: %sg change with no active session",
+        device.id, compartment.compartment_number, delta,
+    )
+    _notify_tamper(device, compartment.compartment_number, delta)
+
+    return {
+        'dose_status': 'tamper_suspected',
+        'error': 'no_active_session',
+        'delta_grams': delta,
+        'reading_grams': round(actual_weight, 3),
+        'balances_adjusted': False,
+    }
+
+
+# ── Fill mode — device-wide cumulative subtraction ──────────────────────────
+
+def process_fill_measurement(device, compartment, total_weight: float,
+                             medicine_id: str = None) -> dict:
+    """
+    One step of the guided fill sequence.
+
+    The load cell reads the whole carousel, so each measurement includes
+    everything loaded before it. The new content is the difference against the
+    running device-wide reference, which then advances:
+
+        derived  = total_weight - device.total_weight_grams
+        reference = total_weight
+
+    Passing `medicine_id` attributes the step to a single medicine and derives
+    its per-pill weight; omitting it attributes the step to the compartment as
+    a whole.
+    """
+    from .models import SubCompartment, WeightHistory
+
+    reference = device.total_weight_grams
+    derived = round(total_weight - reference, 3)
+
+    if derived <= 0:
+        return {
+            'error': 'no_weight_added',
+            'message': (
+                f'Reading ({total_weight}g) is not above the running reference '
+                f'({reference}g). Check that pills were actually added.'
+            ),
+            'reference_grams': round(reference, 3),
+            'reading_grams': round(total_weight, 3),
+        }
+
+    WeightHistory.objects.create(
+        device=device,
+        compartment_number=compartment.compartment_number,
+        weight_grams=total_weight,
+    )
+
+    result = {
+        'compartment_number': compartment.compartment_number,
+        'reference_before_grams': round(reference, 3),
+        'reading_grams': round(total_weight, 3),
+        'derived_weight_grams': derived,
+    }
+
+    if medicine_id:
+        sub = SubCompartment.objects.filter(
+            id=medicine_id, compartment=compartment, is_active=True
+        ).first()
+        if not sub:
+            return {'error': 'medicine_not_found'}
+        if sub.total_pills <= 0:
+            return {'error': 'total_pills_not_set',
+                    'message': f'{sub.medicine_name} has no total_pills to divide by.'}
+
+        sub.pill_weight_grams = round(derived / sub.total_pills, 4)
+        sub.total_weight_grams = derived
+        sub.ai_analysis_data = {
+            'source': 'load_cell_measured',
+            'device_reference_before_grams': round(reference, 3),
+            'device_reading_grams': round(total_weight, 3),
+            'this_medicine_weight_grams': derived,
+            'total_pills': sub.total_pills,
+        }
+        sub.save(update_fields=[
+            'pill_weight_grams', 'total_weight_grams', 'ai_analysis_data',
+        ])
+        result['medicine_name'] = sub.medicine_name
+        result['total_pills'] = sub.total_pills
+        result['pill_weight_grams'] = sub.pill_weight_grams
+
+    # Compartment expected weight is the sum of what has actually been measured
+    # into it; balance starts equal to it until doses begin.
+    measured = compartment.sub_compartments.filter(is_active=True, pill_weight_grams__gt=0)
+    compartment.expected_weight_grams = round(
+        sum(s.total_weight_grams for s in measured) or derived, 3
+    )
+    compartment.current_balance_weight_grams = compartment.expected_weight_grams
+    compartment.last_filled_at = timezone.now()
+    compartment.save(update_fields=[
+        'expected_weight_grams', 'current_balance_weight_grams', 'last_filled_at',
+    ])
+
+    device.total_weight_grams = total_weight
+    device.save(update_fields=['total_weight_grams'])
+
+    result['compartment_expected_weight_grams'] = compartment.expected_weight_grams
+    result['device_total_grams'] = round(total_weight, 3)
+    return result
 
 
 # ── Gate event handling ──────────────────────────────────────────────────────
@@ -276,6 +446,24 @@ def _notify_partial_or_missed(device, compartment_number, dose_status,
         _send_whatsapp(phone, msg)
     except Exception as exc:
         logger.warning("Failed to send partial/missed dose notification: %s", exc)
+
+
+def _notify_tamper(device, compartment_number, delta_grams):
+    try:
+        from apps.iot.tasks import _send_whatsapp
+        phone = device.caregiver_phone
+        if not phone:
+            return
+        _send_whatsapp(
+            phone,
+            f"UNEXPECTED WEIGHT CHANGE — {device.device_name}\n"
+            f"Compartment {compartment_number} changed by {delta_grams}g "
+            f"with no dose scheduled.\n"
+            f"Pills may have been removed outside the schedule, or the "
+            f"dispenser was moved. Please check the device."
+        )
+    except Exception as exc:
+        logger.warning("Failed to send tamper notification: %s", exc)
 
 
 def _notify_gate_locked(device, compartment_number, gate_open_count):

@@ -1026,51 +1026,25 @@ class FillWeightIngestView(APIView):
         except SubCompartment.DoesNotExist:
             return APIResponse.error("Medicine not found in this compartment.", status=404)
 
-        # Sum all already-measured medicines (pill_weight > 0) in this compartment
-        cumulative_grams = sum(
-            s.total_weight_grams
-            for s in compartment.sub_compartments.filter(is_active=True)
-            if s.id != sub.id and s.pill_weight_grams > 0
+        from .weight_service import process_fill_measurement
+        result = process_fill_measurement(
+            device, compartment, weight_grams, medicine_id=str(sub.id)
         )
 
-        this_medicine_total = weight_grams - cumulative_grams
-        if this_medicine_total <= 0:
+        if result.get('error'):
             return APIResponse.error(
-                f"Measured weight ({weight_grams}g) is not greater than previously "
-                f"measured medicines ({cumulative_grams}g). Check that pills were added.",
-                status=400
+                result.get('message', result['error']), code=result['error'], status=400
             )
 
-        pill_weight = round(this_medicine_total / sub.total_pills, 4)
-        total_weight = round(this_medicine_total, 3)
-
-        sub.pill_weight_grams = pill_weight
-        sub.total_weight_grams = total_weight
-        sub.ai_analysis_data = {
-            'source': 'load_cell_measured',
-            'raw_cumulative_weight_grams': cumulative_grams,
-            'raw_total_weight_grams': weight_grams,
-            'this_medicine_weight_grams': total_weight,
-            'total_pills': sub.total_pills,
-        }
-        sub.save(update_fields=['pill_weight_grams', 'total_weight_grams', 'ai_analysis_data'])
-
-        # Recalculate compartment expected weight from all measured medicines
-        measured_subs = compartment.sub_compartments.filter(is_active=True, pill_weight_grams__gt=0)
-        compartment.expected_weight_grams = round(
-            sum(s.total_weight_grams for s in measured_subs), 3
+        from .config_service import bump_schedule_version
+        result['schedule_version'] = bump_schedule_version(
+            device, reason=f'fill_weight_compartment_{compartment_num}'
         )
-        compartment.save(update_fields=['expected_weight_grams'])
-
-        return APIResponse.success({
-            'medicine_name': sub.medicine_name,
-            'total_pills': sub.total_pills,
-            'this_medicine_weight_grams': total_weight,
-            'pill_weight_grams': pill_weight,
-            'cumulative_weight_grams': cumulative_grams,
-            'compartment_expected_weight_grams': compartment.expected_weight_grams,
-            'message': f'Weight measured: {pill_weight}g per pill for {sub.medicine_name}.',
-        })
+        result['message'] = (
+            f"Weight measured: {result['pill_weight_grams']}g per pill "
+            f"for {result['medicine_name']}."
+        )
+        return APIResponse.success(result)
 
 
 class DispenserMedicineListView(APIView):
@@ -1365,8 +1339,14 @@ class WeightReadingView(APIView):
                 f"Compartment {compartment_num} not found for this device.", status=404
             )
 
+        from .services import parse_device_timestamp
         from .weight_service import process_weight_reading
-        result = process_weight_reading(comp, weight)
+        result = process_weight_reading(
+            comp, weight,
+            session_uuid=(request.data.get('session_uuid')
+                          or request.data.get('session_id') or '').strip() or None,
+            occurred_at=parse_device_timestamp(request.data.get('occurred_at')),
+        )
 
         # Notify caregiver for missed/partial (already done inside weight_service)
         # Queue missed dose event if status is missed
@@ -1503,3 +1483,165 @@ class SyncTimeView(APIView):
             'iso_time': now.isoformat(),
             'utc_offset_seconds': 0,
         })
+
+
+# ──────────────────────────────────────────────────────────────────
+# Config bundle — the device's whole world, fetched only when stale
+# ──────────────────────────────────────────────────────────────────
+
+class DeviceConfigView(APIView):
+    """
+    GET /api/v1/iot/devices/<device_id>/config/
+    Full schedule + policy + weights the device caches in NVS and runs from.
+    Fetched on boot and whenever a heartbeat reports config_stale.
+    Authentication: X-Device-Key header, or JWT for the owner (debugging).
+    """
+    authentication_classes = [DeviceAPIKeyAuthentication, MedAdhereJWTAuthentication]
+    permission_classes = []
+
+    def get(self, request, device_id):
+        device = request.auth if hasattr(request.auth, 'api_key') else None
+
+        if device:
+            if str(device.id) != str(device_id):
+                return APIResponse.forbidden()
+        elif request.user and request.user.is_authenticated:
+            device = Device.objects.filter(
+                id=device_id, user=request.user, is_active=True
+            ).first()
+            if not device:
+                return APIResponse.forbidden()
+        else:
+            return APIResponse.error("Missing or invalid X-Device-Key", status=401)
+
+        from .config_service import build_config_bundle
+        return APIResponse.success(build_config_bundle(device))
+
+
+# ──────────────────────────────────────────────────────────────────
+# Batch event ingest — flush of the device's offline NVS queue
+# ──────────────────────────────────────────────────────────────────
+
+class EventBatchIngestView(APIView):
+    """
+    POST /api/v1/iot/events/batch/
+    Body: { "events": [ { event_uuid, event_type, occurred_at, ... }, ... ] }
+
+    Each event is processed by the same handler as a live one, so a dose that
+    happened while WiFi was down is verified identically once flushed.
+    Idempotent per event_uuid — a partially-delivered batch is safe to resend.
+    Authentication: X-Device-Key header.
+    """
+    authentication_classes = [DeviceAPIKeyAuthentication]
+    permission_classes = []
+
+    MAX_BATCH = 50
+
+    def post(self, request):
+        device = request.auth
+        if not device:
+            return APIResponse.error("Missing or invalid X-Device-Key", status=401)
+
+        events = request.data.get('events')
+        if not isinstance(events, list) or not events:
+            return APIResponse.error("events must be a non-empty list", status=400)
+        if len(events) > self.MAX_BATCH:
+            return APIResponse.error(
+                f"Batch too large — send at most {self.MAX_BATCH} events", status=400
+            )
+
+        results = []
+        for raw in events:
+            if not isinstance(raw, dict):
+                results.append({'status': 'rejected', 'error': 'not_an_object'})
+                continue
+
+            payload = dict(raw)
+            payload.setdefault('event_uuid', str(uuid.uuid4()))
+
+            try:
+                event, created, response_data = DeviceService.ingest_event(device, payload)
+            except ValueError as exc:
+                results.append({
+                    'event_uuid': payload.get('event_uuid'),
+                    'status': 'rejected',
+                    'error': str(exc),
+                })
+                continue
+
+            results.append({
+                'event_uuid': payload['event_uuid'],
+                'event_type': payload.get('event_type'),
+                'status': 'accepted' if created else 'duplicate_ignored',
+                'response_data': response_data,
+            })
+
+        accepted = sum(1 for r in results if r.get('status') == 'accepted')
+        return APIResponse.success({
+            'received': len(events),
+            'accepted': accepted,
+            'results': results,
+        })
+
+
+# ──────────────────────────────────────────────────────────────────
+# Fill measurement — device-wide cumulative weight subtraction
+# ──────────────────────────────────────────────────────────────────
+
+class FillMeasureView(APIView):
+    """
+    POST /api/v1/iot/devices/<device_id>/fill/measure/
+    Body: { "compartment_number": 2, "total_weight_grams": 240.5,
+            "medicine_id": "<uuid>"  # optional }
+
+    One step of the guided fill. The load cell reads the whole carousel, so the
+    new content is this reading minus the running device-wide reference:
+
+        derived   = total_weight_grams - device.total_weight_grams
+        reference = total_weight_grams
+
+    Authentication: X-Device-Key header.
+    """
+    authentication_classes = [DeviceAPIKeyAuthentication]
+    permission_classes = []
+
+    def post(self, request):
+        device = request.auth
+        if not device:
+            return APIResponse.error("Missing or invalid X-Device-Key", status=401)
+
+        compartment_num = request.data.get('compartment_number')
+        weight_raw = request.data.get('total_weight_grams', request.data.get('weight_grams'))
+
+        if compartment_num is None or weight_raw is None:
+            return APIResponse.error(
+                "compartment_number and total_weight_grams are required", status=400
+            )
+
+        try:
+            total_weight = float(weight_raw)
+        except (TypeError, ValueError):
+            return APIResponse.error("total_weight_grams must be a number", status=400)
+
+        compartment = PhysicalCompartment.objects.filter(
+            device=device, compartment_number=int(compartment_num)
+        ).first()
+        if not compartment:
+            return APIResponse.error(f"Compartment {compartment_num} not found.", status=404)
+
+        from .weight_service import process_fill_measurement
+        result = process_fill_measurement(
+            device, compartment, total_weight,
+            medicine_id=(request.data.get('medicine_id') or '').strip() or None,
+        )
+
+        if result.get('error'):
+            return APIResponse.error(
+                result.get('message', result['error']), code=result['error'], status=400
+            )
+
+        from .config_service import bump_schedule_version
+        result['schedule_version'] = bump_schedule_version(
+            device, reason=f'fill_measure_compartment_{compartment_num}'
+        )
+        return APIResponse.success(result)

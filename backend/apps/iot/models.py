@@ -65,6 +65,16 @@ class Device(BaseModel):
     is_gate_locked = models.BooleanField(default=False)
     current_compartment_position = models.PositiveSmallIntegerField(default=1)
 
+    # Config bundle versioning — firmware caches the bundle in NVS and only
+    # re-fetches when the version it reports differs from this one.
+    schedule_version = models.PositiveIntegerField(default=1)
+
+    # Single shared load cell sits under the whole carousel, so weights are
+    # device-wide: total_weight_grams is the running reference every fill step
+    # and dose delta is measured against.
+    total_weight_grams = models.FloatField(default=0.0)
+    tare_weight_grams = models.FloatField(default=0.0)
+
     class Meta:
         indexes = [models.Index(fields=['api_key'], name='idx_iot_device_api_key')]
 
@@ -108,6 +118,8 @@ class DeviceEvent(BaseModel):
         ('HAND_DETECTED', 'Hand Detected'),
         ('LID_OPENED', 'Lid Opened'),
         ('LID_CLOSED', 'Lid Closed'),
+        ('DOSE_STARTED', 'Dose Started (RTC triggered)'),
+        ('WEIGHT_READING', 'Weight Reading'),
         ('DOSE_TAKEN', 'Dose Taken'),
         ('DOSE_TIMEOUT', 'Dose Timeout (Missed)'),
         ('DOSE_SKIPPED', 'Dose Skipped'),
@@ -129,6 +141,9 @@ class DeviceEvent(BaseModel):
     event_type = models.CharField(max_length=40, choices=EVENT_TYPES)
     compartment_num = models.PositiveSmallIntegerField(null=True, blank=True)
     raw_payload = models.JSONField(default=dict)
+    # RTC timestamp from the device. Differs from created_at whenever an event
+    # was produced offline and flushed from the NVS queue later.
+    occurred_at = models.DateTimeField(null=True, blank=True, db_index=True)
     processed = models.BooleanField(default=False)
     adherence_event = models.ForeignKey(
         'telemetry.TelemetryEvent', null=True, blank=True,
@@ -252,6 +267,12 @@ class DeviceCommand(BaseModel):
         ('OPEN_GATE', 'Open Gate'),
         # Fill-mode weight measurement
         ('READ_FILL_WEIGHT', 'Read Fill Weight'),
+        # Caregiver "take medicine now" — overrides the device's local RTC schedule
+        ('TRIGGER_DOSE', 'Trigger Dose Now'),
+        # Ask the device for an out-of-band load cell reading
+        ('READ_WEIGHT', 'Read Weight'),
+        # Tell the device its cached config bundle is stale
+        ('SYNC_CONFIG', 'Sync Config Bundle'),
     ]
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
@@ -383,6 +404,14 @@ class DoseSession(BaseModel):
     compartment = models.ForeignKey(
         PhysicalCompartment, on_delete=models.CASCADE, related_name='dose_sessions'
     )
+    # Minted on the ESP32 when the RTC fires, so an event replayed from the
+    # offline queue resolves to the same session instead of creating a new one.
+    device_session_uuid = models.CharField(
+        max_length=64, unique=True, null=True, blank=True, db_index=True
+    )
+    # Local (device-timezone) date of the slot this session belongs to.
+    # One session per compartment per day.
+    slot_date = models.DateField(null=True, blank=True, db_index=True)
     scheduled_time = models.DateTimeField()
     expected_weight_before = models.FloatField(default=0.0)
     actual_weight_after = models.FloatField(null=True, blank=True)

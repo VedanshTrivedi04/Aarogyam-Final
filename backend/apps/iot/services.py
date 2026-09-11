@@ -13,6 +13,33 @@ from .models import Device, DeviceCommand, DeviceEvent, DeviceHeartbeat, DeviceC
 logger = logging.getLogger(__name__)
 
 
+def parse_device_timestamp(value):
+    """
+    Convert an `occurred_at` from the device into an aware datetime.
+
+    The ESP32 sends DS3231 local wall-clock (e.g. "2026-09-12T18:15:02") with
+    no offset, so it is interpreted in the device timezone. Returns None for
+    anything unparseable — a missing RTC stamp must never reject an event.
+    """
+    if not value:
+        return None
+
+    import datetime as dt
+
+    import pytz
+
+    from .config_service import DEVICE_TIMEZONE
+
+    try:
+        parsed = dt.datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = pytz.timezone(DEVICE_TIMEZONE).localize(parsed)
+    return parsed
+
+
 # ─────────────────────────────────────────────────────────────
 # Schedule builder (shared by views + tasks)
 # ─────────────────────────────────────────────────────────────
@@ -142,15 +169,61 @@ def handle_heartbeat(device: Device, event: DeviceEvent, payload: dict) -> dict:
         except Exception:
             logger.warning("AgentOrchestrator not available for low battery broadcast")
 
-    schedule_updated = check_schedule_updated(device)
+    # ── Config reconciliation ────────────────────────────────────
+    # The device reports the schedule_version it has cached in NVS. If it
+    # differs from ours, it re-fetches the bundle once. This is what replaces
+    # the old 60-second schedule poll.
+    device_version = payload.get('schedule_version')
+    config_stale = (
+        device_version is None or int(device_version) != device.schedule_version
+    )
+
+    pending_commands = DeviceCommand.objects.filter(
+        device=device, status='PENDING', expires_at__gt=timezone.now(),
+    ).count()
+
+    now = timezone.now()
     result: dict = {
-        'server_time': timezone.now().isoformat(),
-        'schedule_updated': schedule_updated,
+        'server_time': now.isoformat(),
+        'server_unix_time': int(now.timestamp()),
+        'schedule_version': device.schedule_version,
+        'config_stale': config_stale,
+        'pending_commands': pending_commands,
+        'gate_locked': device.is_gate_locked,
         'firmware_update_available': check_firmware_update(device),
     }
+
+    # RTC drift — device sends its own clock so we can tell it to resync.
+    rtc_time = payload.get('rtc_time')
+    if rtc_time:
+        result['rtc_drift_seconds'] = _rtc_drift_seconds(rtc_time)
+
+    # Legacy fields for firmware that predates config bundles.
+    schedule_updated = check_schedule_updated(device)
+    result['schedule_updated'] = schedule_updated
     if schedule_updated:
         result['updated_schedule'] = get_device_schedule(device)
     return result
+
+
+def _rtc_drift_seconds(rtc_time: str):
+    """
+    Seconds the device's RTC is behind/ahead of server time.
+    The device sends local wall-clock ISO8601 without an offset.
+    """
+    import datetime as dt
+
+    import pytz
+
+    from .config_service import DEVICE_TIMEZONE
+
+    try:
+        naive = dt.datetime.fromisoformat(rtc_time.replace('Z', ''))
+        if naive.tzinfo is None:
+            naive = pytz.timezone(DEVICE_TIMEZONE).localize(naive)
+        return int((timezone.now() - naive).total_seconds())
+    except (ValueError, TypeError):
+        return None
 
 
 def handle_compartment_rotated(device: Device, event: DeviceEvent, payload: dict) -> dict:
@@ -350,6 +423,107 @@ def handle_dose_duplicate_blocked(device: Device, event: DeviceEvent, payload: d
 
 
 # Dispatch table — event_type → handler function
+def _resolve_compartment(device: Device, payload: dict):
+    from .models import PhysicalCompartment
+
+    compartment_num = payload.get('compartment_num') or payload.get('compartment')
+    if not compartment_num:
+        return None
+    return (
+        PhysicalCompartment.objects
+        .filter(device=device, compartment_number=int(compartment_num))
+        .prefetch_related('sub_compartments')
+        .first()
+    )
+
+
+def handle_dose_started(device: Device, event: DeviceEvent, payload: dict) -> dict:
+    """
+    The device's RTC fired a slot and it has read its baseline weight.
+
+    The session UUID is minted on the ESP32, so this is idempotent: an event
+    replayed from the offline queue resolves to the session it created the
+    first time instead of opening a second one.
+    """
+    from .models import DoseSession
+    from .weight_service import calculate_dose_expected_reduction
+
+    comp = _resolve_compartment(device, payload)
+    if not comp:
+        return {'error': 'compartment_not_found'}
+
+    session_uuid = payload.get('session_uuid') or payload.get('session_id')
+    if not session_uuid:
+        return {'error': 'session_uuid_required'}
+
+    weight_before = payload.get('weight_before') or payload.get('weight_grams') or 0.0
+    active_subs = [s for s in comp.sub_compartments.all() if s.is_active]
+    expected_reduction = calculate_dose_expected_reduction(active_subs)
+
+    occurred = event.occurred_at or timezone.now()
+    session, created = DoseSession.objects.get_or_create(
+        device_session_uuid=session_uuid,
+        defaults={
+            'compartment': comp,
+            'slot_date': timezone.localtime(occurred).date(),
+            'scheduled_time': occurred,
+            'expected_weight_before': float(weight_before),
+            'weight_reduction_expected': expected_reduction,
+        },
+    )
+
+    # The device's own baseline reading is the freshest device-wide total.
+    if created and weight_before:
+        device.total_weight_grams = float(weight_before)
+        device.save(update_fields=['total_weight_grams'])
+
+    return {
+        'session_id': str(session.id),
+        'created': created,
+        'expected_reduction_grams': round(expected_reduction, 3),
+    }
+
+
+def handle_weight_reading(device: Device, event: DeviceEvent, payload: dict) -> dict:
+    """
+    Load cell reading from the device.
+
+    phase='before_dose' records a baseline; phase='after_dose' runs the full
+    verification and returns dose_status, which the firmware reads out of
+    response_data to pick its audio track and OLED message.
+    """
+    from .weight_service import process_weight_reading
+
+    comp = _resolve_compartment(device, payload)
+    if not comp:
+        return {'error': 'compartment_not_found'}
+
+    try:
+        weight = float(payload.get('weight_grams'))
+    except (TypeError, ValueError):
+        return {'error': 'weight_grams_invalid'}
+
+    phase = payload.get('phase', 'after_dose')
+    session_uuid = payload.get('session_uuid') or payload.get('session_id')
+
+    if phase == 'before_dose':
+        from .weight_service import find_dose_session
+
+        session = find_dose_session(comp, session_uuid)
+        if session and session.dose_status == 'pending':
+            session.expected_weight_before = weight
+            session.save(update_fields=['expected_weight_before'])
+
+        device.total_weight_grams = weight
+        device.save(update_fields=['total_weight_grams'])
+        return {'phase': 'before_dose', 'baseline_grams': weight,
+                'session_id': str(session.id) if session else None}
+
+    return process_weight_reading(
+        comp, weight, session_uuid=session_uuid, occurred_at=event.occurred_at
+    )
+
+
 EVENT_HANDLERS = {
     'DEVICE_BOOT':              handle_device_boot,
     'HEARTBEAT':                handle_heartbeat,
@@ -357,6 +531,8 @@ EVENT_HANDLERS = {
     'HAND_DETECTED':            handle_hand_detected,
     'LID_OPENED':               handle_lid_opened,
     'LID_CLOSED':               handle_lid_closed,
+    'DOSE_STARTED':             handle_dose_started,
+    'WEIGHT_READING':           handle_weight_reading,
     'DOSE_TAKEN':               handle_dose_taken,
     'DOSE_TIMEOUT':             handle_dose_timeout,
     'DOSE_SKIPPED':             handle_dose_skipped,
@@ -401,6 +577,7 @@ class DeviceService:
                 'event_type': event_type,
                 'compartment_num': payload.get('compartment_num') or payload.get('compartment'),
                 'raw_payload': payload,
+                'occurred_at': parse_device_timestamp(payload.get('occurred_at')),
             }
         )
 

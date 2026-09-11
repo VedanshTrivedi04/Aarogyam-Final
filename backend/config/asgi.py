@@ -11,10 +11,15 @@ from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from config.ws_routing import websocket_urlpatterns
 from apps.communications.middleware import JWTAuthMiddleware
+from apps.iot.ws_auth import DeviceKeyAuthMiddleware
 
 application = ProtocolTypeRouter({
     'http': get_asgi_application(),
-    'websocket': JWTAuthMiddleware(
-        URLRouter(websocket_urlpatterns)
+    # Both auth layers run: DeviceKey sets scope['device'] for firmware,
+    # JWT sets scope['user'] for browser clients. Each consumer checks its own.
+    'websocket': DeviceKeyAuthMiddleware(
+        JWTAuthMiddleware(
+            URLRouter(websocket_urlpatterns)
+        )
     ),
 })
