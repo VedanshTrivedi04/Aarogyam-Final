@@ -7,9 +7,8 @@ echo "================================================="
 
 # Start background Celery worker and beat if REDIS_URL is provided
 if [ -n "$REDIS_URL" ]; then
-    echo "==> [CELERY] Starting Celery Worker & Beat scheduler in background..."
-    # -c 1 keeps memory usage safe on free tier (512MB RAM)
-    celery -A config worker --beat -l info -c 1 \
+    echo "==> [CELERY] Starting Celery Worker & Beat scheduler in background (solo pool for minimal RAM)..."
+    celery -A config worker --beat -l info -P solo \
         --scheduler django_celery_beat.schedulers:DatabaseScheduler \
         --pidfile=/tmp/celerybeat.pid &
     CELERY_PID=$!
@@ -29,5 +28,6 @@ else
 fi
 
 # Start Daphne ASGI server in foreground to serve HTTP & WebSockets on $PORT
+# --proxy-headers ensures Daphne trusts Render's X-Forwarded-Proto: https
 echo "==> [DAPHNE] Starting Daphne ASGI server on port ${PORT:-8000}..."
-exec daphne -b 0.0.0.0 -p "${PORT:-8000}" config.asgi:application
+exec daphne -b 0.0.0.0 -p "${PORT:-8000}" --proxy-headers config.asgi:application
