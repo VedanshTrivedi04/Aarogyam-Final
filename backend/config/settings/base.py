@@ -67,6 +67,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -103,6 +104,20 @@ DATABASES = {
         },
     }
 }
+
+# Use DATABASE_URL if provided (standard on Neon and Render)
+if os.environ.get('DATABASE_URL'):
+    try:
+        import dj_database_url
+        DATABASES['default'] = dj_database_url.config(
+            default=os.environ['DATABASE_URL'],
+            conn_max_age=600,
+            conn_health_checks=True,
+            ssl_require=True,
+        )
+    except Exception:
+        pass
+
 
 # ─── Cache / Redis ───────────────────────────────────────────────────────────
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0')
@@ -229,6 +244,17 @@ STATIC_URL  = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL   = '/media/'
 MEDIA_ROOT  = BASE_DIR / 'media'
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+WHITENOISE_MANIFEST_STRICT = False
+
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: aarogyam-backend
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: chmod +x build.sh start.sh && ./build.sh
+    startCommand: ./start.sh
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: FIELD_ENCRYPTION_KEY
+        sync: false
+      - key: ALLOWED_HOSTS
+        value: "*"
+      - key: CORS_ALLOW_ALL_ORIGINS
+        value: "True"
+      - key: CSRF_TRUSTED_ORIGINS
+        value: "https://*.onrender.com,https://*.vercel.app"
+      - key: MQTT_BROKER
+        sync: false
+      - key: MQTT_PORT
+        value: "1883"
