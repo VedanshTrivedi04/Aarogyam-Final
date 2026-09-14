@@ -10,6 +10,8 @@ import { Card, CardContent, CardHeader } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { useQuery } from '@tanstack/react-query';
 import { useCaregiverPatients, useCaregiverPatientDetail, useCaregiverPatientAdherence, useCaregiverPatientAlerts, useUpdateCaregiverPatient } from '@/hooks/useCaregiver';
+import { useRiskScore, useInsights, useRecommendations } from '@/hooks/useAi';
+import { RiskMeter, AIInsightsCard } from '@/components/ai';
 import { axiosInstance } from '@/lib/axios';
 import Reports from '../patient/Reports';
 import ChatDrawer from '@/components/communications/ChatDrawer';
@@ -35,6 +37,9 @@ export default function PatientDetail() {
   const { data: adherence } = useCaregiverPatientAdherence(id);
   const { data: alerts = [] } = useCaregiverPatientAlerts(id);
   const updateMutation = useUpdateCaregiverPatient();
+  const { data: riskData, isLoading: isRiskLoading } = useRiskScore(id);
+  const { data: insightsData, isLoading: isInsightsLoading } = useInsights(id);
+  const { data: recommendationsData, isLoading: isRecsLoading } = useRecommendations(id);
 
   const [showChat, setShowChat] = useState(false);
   const [showCall, setShowCall] = useState(false);
@@ -196,6 +201,24 @@ export default function PatientDetail() {
         </div>
 
         <div className="flex flex-col gap-6">
+          {/* AI Adherence Risk Meter */}
+          <RiskMeter
+            riskScore={riskData?.risk_score}
+            riskLevel={riskData?.risk_level}
+            confidence={riskData?.confidence}
+            source={riskData?.source}
+            planNote={riskData?.plan_note}
+            isLoading={isRiskLoading}
+          />
+
+          {/* AI Behavioral Insights & Explainable Reasons — helps caregiver understand why patient is flagged */}
+          <AIInsightsCard
+            riskData={riskData}
+            insights={insightsData}
+            recommendations={recommendationsData}
+            isLoading={isInsightsLoading || isRiskLoading || isRecsLoading}
+          />
+
           <Card className="rounded-[2.5rem] border-dashed border-border/60">
             <CardContent className="p-6">
               <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2"><Activity className="w-5 h-5 text-primary" /> Linked Data</h3>

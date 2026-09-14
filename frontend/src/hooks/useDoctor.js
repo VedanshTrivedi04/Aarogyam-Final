@@ -1,5 +1,6 @@
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { doctorAgent } from '@/agents/doctor.agent';
+import { aiAgent } from '@/agents/ai.agent';
 import { qk, STALE } from './qk';
 
 /** List patients linked to the authenticated doctor. */
@@ -55,16 +56,27 @@ export function useDoctorPatientsData(patients = []) {
         staleTime: STALE.CAREGIVER_ALERTS,
         enabled: !!p.id,
       },
+      {
+        // Real AI risk score/trend, shown alongside adherence on triage cards.
+        // Not retried: access depends on backend patient-AI-access rules.
+        queryKey: qk.ai.riskScore(p.patientId),
+        queryFn:  () => aiAgent.getRiskScore(p.patientId),
+        staleTime: STALE.RISK_SCORE,
+        enabled: !!p.patientId,
+        retry: false,
+      },
     ]),
   });
 
   const result = {};
   patients.forEach((p, index) => {
-    const adherenceQuery = queries[index * 2];
-    const alertsQuery    = queries[index * 2 + 1];
+    const adherenceQuery = queries[index * 3];
+    const alertsQuery    = queries[index * 3 + 1];
+    const riskQuery      = queries[index * 3 + 2];
     result[p.id] = {
       adherence: adherenceQuery?.data,
       alerts:    alertsQuery?.data || [],
+      risk:      riskQuery?.isSuccess ? riskQuery.data : null,
       isLoading: adherenceQuery?.isLoading || alertsQuery?.isLoading,
       isError:   adherenceQuery?.isError   || alertsQuery?.isError,
     };

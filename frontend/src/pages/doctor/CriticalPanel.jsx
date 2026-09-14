@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, ArrowLeft, TrendingDown, ShieldAlert,
-  Clock, Heart, Loader2,
+import { Search, ArrowLeft, TrendingDown, TrendingUp, ShieldAlert,
+  Clock, Heart, Loader2, Brain,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
@@ -15,8 +15,16 @@ const riskLevel = (pct) => {
   return { label: 'Moderate', color: 'from-yellow-500 to-orange-400' };
 };
 
-const FlagCard = ({ patient, adherencePct, missedCount, recentAlert, onAction }) => {
+const AI_RISK_LEVEL_COLORS = {
+  low: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
+  medium: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
+  high: 'bg-orange-500/10 text-orange-600 border-orange-500/20',
+  critical: 'bg-destructive/10 text-destructive border-destructive/20',
+};
+
+const FlagCard = ({ patient, adherencePct, missedCount, recentAlert, aiRisk, onAction }) => {
   const risk = riskLevel(adherencePct);
+  const aiRiskColor = AI_RISK_LEVEL_COLORS[(aiRisk?.risk_level || '').toLowerCase()] || 'bg-muted text-muted-foreground border-border';
   return (
     <motion.div
       layout
@@ -37,10 +45,19 @@ const FlagCard = ({ patient, adherencePct, missedCount, recentAlert, onAction })
               </p>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1">
+          <div className="flex flex-col items-end gap-1.5">
             <Badge variant="danger" className="h-7 px-4 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-destructive/20">
               {risk.label} Risk
             </Badge>
+            {aiRisk?.risk_level && (
+              <span className={`inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${aiRiskColor}`}>
+                <Brain className="w-3 h-3" />
+                AI: {aiRisk.risk_level}
+                {typeof aiRisk.risk_score === 'number' && ` · ${Math.round(aiRisk.risk_score * 100)}%`}
+                {aiRisk.risk_trend === 'improving' && <TrendingUp className="w-3 h-3" />}
+                {aiRisk.risk_trend === 'worsening' && <TrendingDown className="w-3 h-3" />}
+              </span>
+            )}
             {recentAlert && (
               <span className="text-[10px] font-black text-destructive uppercase tracking-widest mt-1 flex items-center gap-1.5">
                 <Clock className="w-3 h-3" /> {new Date(recentAlert.scheduled_at).toLocaleString()}
@@ -105,7 +122,7 @@ export default function CriticalPanel() {
       );
       const alerts = Array.isArray(d.alerts) ? d.alerts : [];
       const missed = adherence?.missed ?? alerts.length;
-      return { patient: p, adherencePct: pct, missedCount: missed, recentAlert: alerts[0] || null };
+      return { patient: p, adherencePct: pct, missedCount: missed, recentAlert: alerts[0] || null, aiRisk: d.risk };
     })
     .filter(f => f.adherencePct < 70)
     .sort((a, b) => a.adherencePct - b.adherencePct),
@@ -175,13 +192,14 @@ export default function CriticalPanel() {
       ) : (
         <div className="flex flex-col gap-8">
           <AnimatePresence mode="popLayout">
-            {filtered.map(({ patient, adherencePct, missedCount, recentAlert }) => (
+            {filtered.map(({ patient, adherencePct, missedCount, recentAlert, aiRisk }) => (
               <FlagCard
                 key={patient.id}
                 patient={patient}
                 adherencePct={adherencePct}
                 missedCount={missedCount}
                 recentAlert={recentAlert}
+                aiRisk={aiRisk}
                 onAction={(id) => navigate(`/doctor/patient/${id}`)}
               />
             ))}

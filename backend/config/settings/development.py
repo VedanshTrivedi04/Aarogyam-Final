@@ -22,15 +22,42 @@ if not os.environ.get('EMAIL_HOST_USER'):
 # NOTE: .delay() calls block the caller — EMAIL_TIMEOUT=8s in base.py limits SMTP hangs.
 CELERY_TASK_ALWAYS_EAGER = True
 
-# Use Redis channel layer when running in Docker (REDIS_URL is set to redis://redis:6379/0).
-# Falls back to InMemory only when Redis is unavailable (bare local dev without Docker).
-if os.environ.get('REDIS_URL'):
+# Use Redis channel layer and cache when Redis is available (e.g. Docker),
+# otherwise fall back to LocMemCache and InMemoryChannelLayer for bare local dev.
+redis_url = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0')
+redis_available = False
+try:
+    import redis
+    r = redis.from_url(redis_url, socket_connect_timeout=1, socket_timeout=1)
+    r.ping()
+    redis_available = True
+except Exception:
+    redis_available = False
+
+if redis_available:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': redis_url,
+        }
+    }
     CHANNEL_LAYERS = {
         'default': {
             'BACKEND': 'channels_redis.core.RedisChannelLayer',
             'CONFIG': {
-                'hosts': [os.environ['REDIS_URL']],
+                'hosts': [redis_url],
             },
+        },
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        }
+    }
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
         },
     }
 
