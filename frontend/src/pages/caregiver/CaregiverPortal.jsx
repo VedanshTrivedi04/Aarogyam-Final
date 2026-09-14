@@ -19,6 +19,14 @@ const FadeIn = ({ children, className = '', delay = 0 }) => {
   );
 };
 
+const RISK_LEVEL_COLORS = {
+  low: 'text-emerald-600',
+  medium: 'text-amber-600',
+  high: 'text-orange-600',
+  critical: 'text-red-600',
+};
+const riskColorClass = (level) => RISK_LEVEL_COLORS[(level || '').toLowerCase()] || 'text-muted-foreground';
+
 const ALERT_STYLES = {
   critical: { bg: 'bg-red-50 border-red-200', text: 'text-red-700', badge: 'bg-red-500' },
   warning: { bg: 'bg-amber-50 border-amber-200', text: 'text-amber-700', badge: 'bg-amber-500' },
@@ -73,7 +81,7 @@ const PatientModal = ({ patient, onClose }) => (
           </div>
           <div className="text-center p-3 bg-muted/40 rounded-xl">
             <p className="text-xs text-muted-foreground">AI Risk</p>
-            <p className={`font-bold text-lg ${patient.riskScore === 'Low' ? 'text-emerald-600' : 'text-amber-600'}`}>{patient.riskScore}</p>
+            <p className={`font-bold text-lg ${riskColorClass(patient.riskLevelRaw)}`}>{patient.riskScore}</p>
           </div>
         </div>
 
@@ -144,7 +152,7 @@ const PatientCard = ({ patient, onClick, delay }) => (
           </div>
           <div className="p-2 bg-muted/40 rounded-lg">
             <p className="text-[10px] text-muted-foreground uppercase">Risk</p>
-            <p className={`font-bold text-sm ${patient.riskScore === 'Low' ? 'text-emerald-600' : 'text-amber-600'}`}>{patient.riskScore}</p>
+            <p className={`font-bold text-sm ${riskColorClass(patient.riskLevelRaw)}`}>{patient.riskScore}</p>
           </div>
           <div className="p-2 bg-muted/40 rounded-lg">
             <p className="text-[10px] text-muted-foreground uppercase">Meds</p>
@@ -189,9 +197,9 @@ export default function CaregiverPortal() {
   const [dismissedAlertIds, setDismissedAlertIds] = useState(new Set());
 
   const { data: rawPatients = [], isLoading: isLoadingPatients } = useCaregiverPatients();
-  
+
   const patientIds = useMemo(() => rawPatients.map(p => p.id), [rawPatients]);
-  const { adherenceQueries, alertsQueries } = useCaregiverPatientsData(patientIds);
+  const { adherenceQueries, alertsQueries, riskQueries } = useCaregiverPatientsData(patientIds);
 
   const isLoadingAdherence = adherenceQueries.some(q => q.isLoading);
   const isLoadingAlerts = alertsQueries.some(q => q.isLoading);
@@ -236,15 +244,26 @@ export default function CaregiverPortal() {
         taken: i < medsTaken
       }));
 
+      // Real AI risk level (replaces the previously hardcoded 'Low')
+      const riskQuery = riskQueries[idx];
+      const riskLevelRaw = riskQuery?.data?.risk_level || null;
+      const riskScore = riskQuery?.isLoading
+        ? '…'
+        : riskLevelRaw
+          ? riskLevelRaw.charAt(0).toUpperCase() + riskLevelRaw.slice(1)
+          : 'N/A';
+
       return {
         ...p,
         adherence,
         meds,
         medsTaken,
         medsTotal: medsCount,
+        riskScore,
+        riskLevelRaw,
       };
     });
-  }, [rawPatients, adherenceQueries]);
+  }, [rawPatients, adherenceQueries, riskQueries]);
 
   const filteredPatients = filter === 'all' ? patients : patients.filter(p => p.status === filter);
   const totalMeds = patients.reduce((s, p) => s + (p.medsTotal || 0), 0);

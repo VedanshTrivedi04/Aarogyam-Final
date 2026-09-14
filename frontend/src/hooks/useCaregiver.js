@@ -1,6 +1,7 @@
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { caregiverAgent } from '@/agents/caregiver.agent';
 import { iotAgent } from '@/agents/iot.agent';
+import { aiAgent } from '@/agents/ai.agent';
 import { qk, STALE } from './qk';
 
 /** Link a new patient to this caregiver */
@@ -188,5 +189,15 @@ export function useCaregiverPatientsData(patientIds = []) {
     }))
   });
 
-  return { adherenceQueries, alertsQueries };
+  // Real AI risk score per patient (replaces any hardcoded risk labels)
+  const riskQueries = useQueries({
+    queries: patientIds.map(id => ({
+      queryKey: qk.ai.riskScore(id),
+      queryFn: () => aiAgent.getRiskScore(id),
+      staleTime: STALE.RISK_SCORE,
+      retry: false,
+    }))
+  });
+
+  return { adherenceQueries, alertsQueries, riskQueries };
 }

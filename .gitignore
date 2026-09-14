@@ -8,6 +8,8 @@
 .env.production
 .env.test
 backend/.env
+backend/env
+backend/implementation_plan.md
 frontend/.env
 frontend/env (2)
 *_tokens.json

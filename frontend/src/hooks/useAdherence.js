@@ -47,6 +47,7 @@ export const useLogDose = (patientId) => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk.adherence.streak(patientId) });
       queryClient.invalidateQueries({ queryKey: qk.ai.riskScore(patientId) });
+      queryClient.invalidateQueries({ queryKey: qk.ai.insights(patientId) });
       queryClient.invalidateQueries({ queryKey: qk.adherence.rate(patientId) });
     },
     onError: (error, variables, context) => {

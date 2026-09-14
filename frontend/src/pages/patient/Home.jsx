@@ -27,7 +27,10 @@ import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { GamificationWidget } from '@/components/patient/GamificationWidget';
+import { useRiskScore, useInsights, useRecommendations } from '@/hooks/useAi';
+import { RiskMeter, AIInsightsCard } from '@/components/ai';
 import { axiosInstance } from '@/lib/axios';
+
 
 // ─── SOS Modal ───────────────────────────────────────────────────────────────
 const SOS_STATES = { IDLE: 'idle', CONFIRMING: 'confirming', LOCATING: 'locating', CALLING: 'calling', SUCCESS: 'success', ERROR: 'error' };
@@ -303,7 +306,11 @@ export default function PatientDashboard() {
   const dispenseNow = useDispenseNow();
   const { data: streakData } = useStreak();
   const { data: adherenceData } = useAdherenceRate();
+  const { data: riskData, isLoading: isRiskLoading } = useRiskScore('me');
+  const { data: insightsData, isLoading: isInsightsLoading } = useInsights('me');
+  const { data: recommendationsData, isLoading: isRecsLoading } = useRecommendations('me');
   const [sosOpen, setSosOpen] = React.useState(false);
+
 
   // 4 fixed meal slots — matches caregiver compartment times
   const MEAL_SLOTS = [
@@ -508,8 +515,27 @@ export default function PatientDashboard() {
             </div>
           </motion.button>
 
+          {/* AI Adherence Risk Meter */}
+          <RiskMeter
+            riskScore={riskData?.risk_score}
+            riskLevel={riskData?.risk_level}
+            confidence={riskData?.confidence}
+            source={riskData?.source}
+            planNote={riskData?.plan_note}
+            isLoading={isRiskLoading}
+          />
+
+          {/* AI Behavioral Insights & Explainable Reasons */}
+          <AIInsightsCard
+            riskData={riskData}
+            insights={insightsData}
+            recommendations={recommendationsData}
+            isLoading={isInsightsLoading || isRiskLoading}
+          />
+
           {/* Gamification Widget */}
           <GamificationWidget />
+
 
           <Card className="border-accent bg-accent/10 border-dashed">
             <CardContent className="p-6 flex items-start gap-4">
