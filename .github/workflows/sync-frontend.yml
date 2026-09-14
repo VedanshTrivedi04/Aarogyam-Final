@@ -1,0 +1,49 @@
+name: Sync Frontend to Vercel Deployment Repo
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/sync-frontend.yml'
+  workflow_dispatch:
+
+jobs:
+  sync-to-vercel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Repo
+        uses: actions/checkout@v4
+
+      - name: Sync Frontend to aarogyam-deploy
+        env:
+          DEPLOY_PAT: ${{ secrets.DEPLOY_PAT }}
+        run: |
+          if [ -z "$DEPLOY_PAT" ]; then
+            echo "::error::Secret DEPLOY_PAT is not set! Please add DEPLOY_PAT in repository Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Clone destination deployment repo
+          git clone https://x-access-token:${DEPLOY_PAT}@github.com/VedanshTrivedi04/aarogyam-deploy.git dest-repo
+
+          # Delete existing files in dest-repo except the .git directory
+          find dest-repo -mindepth 1 -not -path 'dest-repo/.git*' -delete
+
+          # Copy all frontend files to root of dest-repo
+          cp -r frontend/. dest-repo/
+
+          # Commit and push if there are changes
+          cd dest-repo
+          git add -A
+          if git diff --staged --quiet; then
+            echo "==> No changes detected in frontend. Skipping push."
+          else
+            git commit -m "sync(frontend): update from Aarogyam-Final commit ${{ github.sha }}"
+            git push origin main
+            echo "==> Successfully pushed to aarogyam-deploy! Vercel deployment triggered."
+          fi
