@@ -7,6 +7,9 @@
 #include "config.h"
 #include "rtc_ds3231.h"
 
+// Forward declaration for remote-command dispatch (defined in PillDispenser.ino)
+void handleRemoteCommand(const char* type, const char* payloadJson);
+
 // ============================================================
 // SCHEDULE STRUCTURE
 // ============================================================
@@ -158,8 +161,19 @@ inline bool fetchSchedulesFromBackend() {
     return false;
 }
 
-inline bool httpSendEvent(const char* eventType, int compartment, const char* extraJson = nullptr) {
+// ============================================================
+// EVENT / HEARTBEAT REPORTING (plain HTTP - deployed backend)
+// ============================================================
+inline bool publishEvent(const char* eventType, int compartment, const char* medicine = "Unknown", int dose = 1) {
+    char payload[300];
+    snprintf(payload, sizeof(payload),
+             "{\"event_type\":\"%s\",\"compartment\":%d,\"compartment_num\":%d,\"medicine\":\"%s\",\"dose\":%d,\"occurred_at\":\"%s\",\"device_id\":\"%s\",\"firmware_version\":\"%s\"}",
+             eventType, compartment, compartment, medicine, dose, getRTCISOString().c_str(), DEVICE_ID, FIRMWARE_VERSION);
+
+    Serial.printf("[EVENT] Emitting: %s (Comp %d)\n", eventType, compartment);
+
     if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("[EVENT] WiFi not connected. Event dropped.");
         return false;
     }
 
@@ -169,19 +183,136 @@ inline bool httpSendEvent(const char* eventType, int compartment, const char* ex
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-Device-Key", DEVICE_API_KEY);
 
-    char payload[256];
-    snprintf(payload, sizeof(payload),
-             "{\"event_type\":\"%s\",\"compartment\":%d,\"compartment_num\":%d,\"occurred_at\":\"%s\",\"firmware_version\":\"%s\"}",
-             eventType, compartment, compartment, getRTCISOString().c_str(), FIRMWARE_VERSION);
-
-    int httpCode = http.POST(payload);
+    int code = http.POST(payload);
     http.end();
 
-    if (httpCode == 200 || httpCode == 201) {
+    if (code == 200 || code == 201) {
         Serial.printf("[HTTP] Event sent: %s\n", eventType);
         return true;
     }
+
+    Serial.printf("[HTTP] Event send failed: %s (code %d)\n", eventType, code);
     return false;
+}
+
+inline bool publishHeartbeat(const char* stepperStatus = "ok", const char* servoStatus = "ok", const char* ultrasonicStatus = "ok") {
+    if (WiFi.status() != WL_CONNECTED) {
+        return false;
+    }
+
+    char payload[256];
+    snprintf(payload, sizeof(payload),
+             "{\"device_id\":\"%s\",\"battery_level\":100,\"firmware_version\":\"%s\",\"stepper_status\":\"%s\",\"servo_status\":\"%s\",\"ultrasonic_status\":\"%s\",\"rtc_time\":\"%s\"}",
+             DEVICE_ID, FIRMWARE_VERSION, stepperStatus, servoStatus, ultrasonicStatus, getRTCISOString().c_str());
+
+    HTTPClient http;
+    String url = String(BACKEND_URL) + API_HEARTBEAT;
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("X-Device-Key", DEVICE_API_KEY);
+
+    int code = http.POST(payload);
+    http.end();
+
+    if (code == 200) {
+        Serial.println("[HTTP] Heartbeat sent successfully.");
+        return true;
+    }
+
+    Serial.printf("[HTTP] Heartbeat send failed (code %d)\n", code);
+    return false;
+}
+
+// ============================================================
+// REMOTE COMMAND POLLING (replaces MQTT command subscription)
+// ============================================================
+inline bool acknowledgeCommand(const char* commandId) {
+    if (WiFi.status() != WL_CONNECTED) {
+        return false;
+    }
+
+    char payload[256];
+    snprintf(payload, sizeof(payload),
+             "{\"event_type\":\"COMMAND_ACKNOWLEDGED\",\"command_id\":\"%s\",\"occurred_at\":\"%s\",\"device_id\":\"%s\",\"firmware_version\":\"%s\"}",
+             commandId, getRTCISOString().c_str(), DEVICE_ID, FIRMWARE_VERSION);
+
+    HTTPClient http;
+    String url = String(BACKEND_URL) + API_EVENTS;
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("X-Device-Key", DEVICE_API_KEY);
+
+    int code = http.POST(payload);
+    http.end();
+
+    return (code == 200 || code == 201);
+}
+
+inline void pollDeviceCommands() {
+    if (WiFi.status() != WL_CONNECTED) {
+        return;
+    }
+
+    HTTPClient http;
+    String url = String(BACKEND_URL) + API_COMMANDS;
+    http.begin(url);
+    http.addHeader("X-Device-Key", DEVICE_API_KEY);
+    http.setTimeout(8000);
+
+    int httpCode = http.GET();
+    if (httpCode != 200) {
+        http.end();
+        return;
+    }
+
+    String payload = http.getString();
+    http.end();
+
+    // Manual parse of: {"commands":[{"command_id":"...","type":"...","payload":{...}}, ...]}
+    int searchIdx = 0;
+    int processed = 0;
+
+    while (searchIdx < payload.length() && processed < 5) {
+        int idIdx = payload.indexOf("\"command_id\":\"", searchIdx);
+        if (idIdx < 0) break;
+
+        int idStart = idIdx + 14; // length of: "command_id":"
+        int idEnd = payload.indexOf("\"", idStart);
+        if (idEnd < 0) break;
+        String commandId = payload.substring(idStart, idEnd);
+
+        String cmdType = "";
+        int typeIdx = payload.indexOf("\"type\":\"", idEnd);
+        if (typeIdx > 0 && typeIdx < idEnd + 100) {
+            int typeStart = typeIdx + 8; // length of: "type":"
+            int typeEnd = payload.indexOf("\"", typeStart);
+            if (typeEnd > 0) {
+                cmdType = payload.substring(typeStart, typeEnd);
+            }
+        }
+
+        String cmdPayload = "{}";
+        int payloadIdx = payload.indexOf("\"payload\":", idEnd);
+        if (payloadIdx > 0 && payloadIdx < idEnd + 150) {
+            int braceStart = payload.indexOf("{", payloadIdx);
+            int braceEnd = payload.indexOf("}", braceStart);
+            if (braceStart > 0 && braceEnd > braceStart) {
+                cmdPayload = payload.substring(braceStart, braceEnd + 1);
+            }
+        }
+
+        Serial.println();
+        Serial.println("==========================================");
+        Serial.println(">>> REMOTE COMMAND RECEIVED (HTTP) <<<");
+        Serial.printf("Type: %s | Command ID: %s\n", cmdType.c_str(), commandId.c_str());
+        Serial.println("==========================================");
+
+        handleRemoteCommand(cmdType.c_str(), cmdPayload.c_str());
+        acknowledgeCommand(commandId.c_str());
+
+        searchIdx = idEnd + 1;
+        processed++;
+    }
 }
 
 #endif // API_CLIENT_H

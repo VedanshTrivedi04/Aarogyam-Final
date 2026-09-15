@@ -60,8 +60,8 @@ urlpatterns = [
     # ── Phase 20: Gamification ────────────────────────────────────
     path('api/v1/gamification/',  include('apps.gamification.urls')),
 
-    # ── WhatsApp Bot ──────────────────────────────────────────────
-    path('api/v1/whatsapp/',      include('apps.whatsapp_bot.urls')),
+    # ── Telegram Bot ──────────────────────────────────────────────
+    path('api/v1/telegram/',      include('apps.telegram_bot.urls')),
 
     # ── Phase 11: Admin Panel API ─────────────────────────────────
     path('api/v1/admin/',         include('apps.admin_panel.urls')),

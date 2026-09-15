@@ -79,9 +79,14 @@ class NotificationDispatcher:
         if SubscriptionGate.has_feature(user, 'sms_reminders') and (prefs is None or prefs.sms_enabled):
             channels.append('SMS')
 
-        # WhatsApp — premium
+        # Telegram — premium. Reuses the 'whatsapp_enabled'/'whatsapp_reminders'
+        # preference & feature-gate names (schema/plan-config rename is out of
+        # scope for now); also requires an actual linked+verified chat, since
+        # sending needs a Telegram chat_id, not a phone number.
         if SubscriptionGate.has_feature(user, 'whatsapp_reminders') and (prefs is None or getattr(prefs, 'whatsapp_enabled', False)):
-            channels.append('WHATSAPP')
+            from apps.telegram_bot.models import TelegramSession
+            if TelegramSession.objects.filter(user=user, onboarding_done=True).exists():
+                channels.append('TELEGRAM')
 
         # Voice — premium
         if SubscriptionGate.has_feature(user, 'voice_reminders') and notification_type == 'DOSE_REMINDER':
@@ -206,32 +211,44 @@ class NotificationDispatcher:
             return False
 
     @staticmethod
-    def send_whatsapp(notification: Notification) -> bool:
+    def send_telegram(notification: Notification) -> bool:
         """
-        Send via the Meta WhatsApp Cloud API. Note: this is a free-form text
-        message, only deliverable if the recipient has messaged the bot
-        within the last 24h. A proactive reminder to someone outside that
-        window needs a pre-approved Meta message template instead — not yet
-        wired up here.
+        Send via the Telegram Bot API. Unlike Twilio/Meta, sending needs the
+        recipient's chat_id (from a linked, onboarding-complete TelegramSession),
+        not a phone number — the user must have messaged the bot at least once.
+        If this is a dose reminder (data.reminder_job_id present), also tags the
+        session so the next reply is parsed as a Y/N/skip dose response.
         """
-        from apps.whatsapp_bot.services import MetaWhatsAppService
+        from apps.telegram_bot.models import TelegramSession
+        from apps.telegram_bot.services import TelegramService, TelegramConversationHandler
         try:
-            phone = notification.user.phone_number
-            if not phone:
+            session = TelegramSession.objects.filter(
+                user=notification.user, onboarding_done=True
+            ).first()
+            if not session:
                 return False
-            result = MetaWhatsAppService.send_text(
-                phone, f'*{notification.title}*\n{notification.body}'
+
+            result = TelegramService.send_message(
+                session.chat_id, f'*{notification.title}*\n{notification.body}'
             )
             if 'error' in result:
                 raise RuntimeError(result['error'])
 
-            notification.external_id = (result.get('messages') or [{}])[0].get('id', '')
+            reminder_job_id = notification.data.get('reminder_job_id')
+            if reminder_job_id:
+                TelegramConversationHandler.set_session_awaiting_dose(session.chat_id, {
+                    'reminder_job_id': reminder_job_id,
+                    'patient_id':      notification.data.get('patient_id'),
+                    'prescription_id': notification.data.get('prescription_id'),
+                })
+
+            notification.external_id = str((result.get('result') or {}).get('message_id', ''))
             notification.status      = NotificationStatus.SENT
             notification.sent_at     = timezone.now()
             notification.save(update_fields=['status', 'sent_at', 'external_id', 'updated_at'])
             return True
         except Exception as e:
-            logger.error(f'WhatsApp send failed for notif={notification.id}: {e}')
+            logger.error(f'Telegram send failed for notif={notification.id}: {e}')
             notification.status        = NotificationStatus.FAILED
             notification.failed_reason = str(e)
             notification.save(update_fields=['status', 'failed_reason', 'updated_at'])

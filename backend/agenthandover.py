@@ -1020,10 +1020,6 @@ class NotificationAgent(BaseAgent):
         payload.data['type'] = 'WELCOME'
         return self.dispatch(payload)
 
-    def send_whatsapp_welcome(self, payload: HandoverPayload) -> dict:
-        payload.data['type'] = 'WHATSAPP_WELCOME'
-        return self.dispatch(payload)
-
     def send_order_confirmation(self, payload: HandoverPayload) -> dict:
         payload.data['type'] = 'ORDER_CONFIRMATION'
         return self.dispatch(payload)

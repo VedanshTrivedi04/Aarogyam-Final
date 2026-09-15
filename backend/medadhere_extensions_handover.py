@@ -103,7 +103,6 @@ logger = logging.getLogger('medadhere.extensions')
 
 PHARMACY_AGENT       = 'PharmacyAgent'
 DOCTOR_AGENT         = 'DoctorAgent'
-WHATSAPP_BOT_AGENT   = 'WhatsAppBotAgent'
 DRUG_INTERACT_AGENT  = 'DrugInteractionAgent'
 FAMILY_AGENT         = 'FamilyAgent'
 FHIR_AGENT           = 'FHIRAgent'
@@ -274,16 +273,6 @@ def register_extension_events():
             (AUDIT_EXT,           'log_digital_prescription'),
         ],
 
-        # ── WhatsApp ──────────────────────────────────────────────
-        ExtAgentEvent.WHATSAPP_DOSE_RESPONSE: [
-            (WHATSAPP_BOT_AGENT,  'process_dose_response'),
-            (AUDIT_EXT,           'log_whatsapp_interaction'),
-        ],
-        ExtAgentEvent.WHATSAPP_ONBOARDING_DONE: [
-            (NOTIFICATION_EXT,    'send_whatsapp_welcome'),
-            (GAMIFICATION_AGENT,  'award_onboarding_badge'),
-        ],
-
         # ── Vitals ────────────────────────────────────────────────
         ExtAgentEvent.VITAL_OUT_OF_RANGE: [
             (DOCTOR_AGENT,        'alert_doctor_vital_oor'),
@@ -321,10 +310,6 @@ def register_extension_events():
         ],
 
         # ── IVR ───────────────────────────────────────────────────
-        ExtAgentEvent.IVR_DOSE_CONFIRMED: [
-            (WHATSAPP_BOT_AGENT,  'log_dose_from_ivr'),
-            (AUDIT_EXT,           'log_ivr_confirmation'),
-        ],
         ExtAgentEvent.IVR_NO_RESPONSE: [
             (NOTIFICATION_EXT,    'escalate_after_ivr_no_response'),
         ],
@@ -1282,276 +1267,6 @@ class DoctorAgent(BaseAgent):
     def _threshold_met(threshold: str, risk_level: str) -> bool:
         order = {'ALL': 0, 'MEDIUM': 1, 'HIGH': 2, 'CRITICAL': 3}
         return order.get(risk_level, 0) >= order.get(threshold, 3)
-
-
-# ═══════════════════════════════════════════════════════════════════
-# EXT-8. WHATSAPP BOT AGENT  (Phase 15)
-# ═══════════════════════════════════════════════════════════════════
-
-# WhatsAppSession.state values (must match apps.whatsapp_bot.models.WA_STATES).
-# NOTE: these look like they'd already exist from the "PHASE 15" spec text
-# above, but that whole block (lines ~404-860) is one big triple-quoted
-# docstring — none of it executes. These are the real, live definitions.
-WA_STATE_IDLE           = 'IDLE'
-WA_STATE_AWAITING_DOSE  = 'AWAITING_DOSE_RESPONSE'
-WA_STATE_ONBOARDING_3   = 'ONBOARDING_PHONE_VERIFY'
-
-
-class WhatsAppBotAgent(BaseAgent):
-    """
-    Owns: WhatsApp conversational flow, intent parsing, session management.
-    Handles both onboarding (no-app flow) and dose confirmation responses.
-
-    Handover In:
-        ← Twilio / WABA webhook → WhatsAppWebhookView → calls this agent
-        ← IVR callback           → log_dose_from_ivr
-
-    Handover Out:
-        → AdherenceAgent : dose log
-        → AuthAgent      : new user registration (onboarding)
-        → AuditAgent     : every interaction
-    """
-    agent_name = WHATSAPP_BOT_AGENT
-
-    # ── Intent constants ─────────────────────────────────────────────
-    INTENT_DOSE_YES  = 'DOSE_YES'    # Reply: "1", "yes", "haan", "ha", "han", "✅"
-    INTENT_DOSE_NO   = 'DOSE_NO'     # Reply: "2", "no", "nahi", "nahi li"
-    INTENT_SKIP      = 'DOSE_SKIP'   # Reply: "3", "skip", "baad mein"
-    INTENT_HELP      = 'HELP'        # Reply: "help", "madad", "?"
-    INTENT_STATUS    = 'STATUS'      # Reply: "status", "aaj ki dava"
-    INTENT_UNKNOWN   = 'UNKNOWN'
-
-    YES_TRIGGERS  = {'1','yes','haan','ha','han','✅','liya','le li','le lia','ok'}
-    NO_TRIGGERS   = {'2','no','nahi','nahin','nhi','nahi li'}
-    SKIP_TRIGGERS = {'3','skip','baad mein','baad','later'}
-    HELP_TRIGGERS = {'help','madad','?','halp','info'}
-
-    def handle_inbound_message(self, phone: str, body: str, wa_msg_id: str) -> dict:
-        """
-        Entry point called by WhatsAppWebhookView.
-        Idempotent — wa_msg_id prevents duplicate processing.
-        """
-        from apps.whatsapp_bot.models import WhatsAppSession, WhatsAppInteractionLog
-
-        # Idempotency check
-        if WhatsAppInteractionLog.objects.filter(whatsapp_msg_id=wa_msg_id).exists():
-            return {'status': 'duplicate_ignored'}
-
-        # Get or create session
-        session, _ = WhatsAppSession.objects.get_or_create(
-            phone_number=phone,
-            defaults={'state': WA_STATE_IDLE, 'last_activity_at': timezone.now()},
-        )
-        session.last_activity_at = timezone.now()
-        session.save(update_fields=['last_activity_at', 'updated_at'])
-
-        # Log inbound
-        WhatsAppInteractionLog.objects.create(
-            session=session, direction='INBOUND',
-            message_body=body, whatsapp_msg_id=wa_msg_id,
-        )
-
-        intent = self._parse_intent(body.strip().lower(), session.state)
-
-        if not session.onboarding_done:
-            return self._handle_onboarding(session, body, intent)
-        return self._handle_active_session(session, intent, body, wa_msg_id)
-
-    def _parse_intent(self, text: str, state: str) -> str:
-        if text in self.YES_TRIGGERS:
-            return self.INTENT_DOSE_YES
-        if text in self.NO_TRIGGERS:
-            return self.INTENT_DOSE_NO
-        if text in self.SKIP_TRIGGERS:
-            return self.INTENT_SKIP
-        if text in self.HELP_TRIGGERS:
-            return self.INTENT_HELP
-        if 'status' in text or 'aaj' in text:
-            return self.INTENT_STATUS
-        return self.INTENT_UNKNOWN
-
-    def _handle_active_session(self, session, intent: str, body: str, wa_msg_id: str) -> dict:
-        """Route intent for registered users."""
-        if session.state == WA_STATE_AWAITING_DOSE:
-            return self.process_dose_response(HandoverPayload(
-                user_id = str(session.user_id) if session.user_id else None,
-                data    = {
-                    'intent'      : intent,
-                    'session_id'  : str(session.id),
-                    'context'     : session.state_data,
-                },
-            ))
-        if intent == self.INTENT_STATUS:
-            return self._send_today_status(session)
-        if intent == self.INTENT_HELP:
-            return self._send_help_menu(session)
-        return self._send_unknown_response(session)
-
-    def process_dose_response(self, payload: HandoverPayload) -> dict:
-        """
-        Called by orchestrator when WHATSAPP_DOSE_RESPONSE fires.
-        Routes YES/NO/SKIP to AdherenceAgent.
-        """
-        from apps.whatsapp_bot.models import WhatsAppSession
-        from apps.telemetry.models import ReminderJob
-
-        intent     = payload.data.get('intent')
-        session_id = payload.data.get('session_id')
-        context    = payload.data.get('context', {})
-        reminder_id= context.get('reminder_job_id')
-
-        if not reminder_id:
-            return {'status': 'no_reminder_context'}
-
-        adherence_payload = HandoverPayload(
-            patient_id     = payload.data.get('patient_id') or context.get('patient_id'),
-            prescription_id= context.get('prescription_id'),
-            reminder_id    = reminder_id,
-            data           = {
-                'status'    : 'TAKEN' if intent == self.INTENT_DOSE_YES else
-                              'SKIPPED' if intent == self.INTENT_SKIP else 'MISSED',
-                'log_method': 'WHATSAPP',
-            },
-            trace_id = payload.trace_id,
-        )
-        orchestrator.handover(
-            WHATSAPP_BOT_AGENT, 'AdherenceAgent',
-            AgentEvent.DOSE_LOGGED, adherence_payload,
-        )
-
-        # Reset session state
-        WhatsAppSession.objects.filter(id=session_id).update(
-            state=WA_STATE_IDLE, state_data={}
-        )
-        return {'status': 'dose_response_processed', 'intent': intent}
-
-    def log_dose_from_ivr(self, payload: HandoverPayload) -> dict:
-        """
-        IVR confirmed dose — route to AdherenceAgent same as WhatsApp.
-        LogSource = 'IVR_CALL'
-        """
-        adherence_payload = HandoverPayload(
-            patient_id     = payload.patient_id,
-            prescription_id= payload.prescription_id,
-            reminder_id    = payload.reminder_id,
-            data           = {
-                'status'    : payload.data.get('status', 'TAKEN'),
-                'log_method': 'IVR_CALL',
-            },
-            trace_id = payload.trace_id,
-        )
-        orchestrator.handover(
-            WHATSAPP_BOT_AGENT, 'AdherenceAgent',
-            AgentEvent.DOSE_LOGGED, adherence_payload,
-        )
-        return {'status': 'ivr_dose_logged'}
-
-    def set_session_awaiting_dose(self, phone: str, context: dict) -> None:
-        """
-        Called by NotificationAgent when sending a WhatsApp reminder.
-        Sets session state so next reply is interpreted as dose response.
-        """
-        from apps.whatsapp_bot.models import WhatsAppSession
-        WhatsAppSession.objects.filter(phone_number=phone).update(
-            state=WA_STATE_AWAITING_DOSE,
-            state_data=context,
-            last_activity_at=timezone.now(),
-        )
-
-    def _handle_onboarding(self, session, body: str, intent: str) -> dict:
-        """
-        Verification state machine for new/unlinked WhatsApp numbers.
-        No separate app step: the incoming number is matched directly
-        against an existing User.phone_number, then ownership is confirmed
-        with an OTP sent over WhatsApp.
-        """
-        from apps.whatsapp_bot.services import WhatsAppMessageService, WhatsAppVerificationService
-
-        state = session.state
-
-        if state == WA_STATE_ONBOARDING_3:
-            return self._complete_verification(session, body)
-
-        # First contact from this (not-yet-linked) number.
-        user = WhatsAppVerificationService.find_matching_user(session.phone_number)
-        if not user:
-            WhatsAppMessageService.send(session.phone_number,
-                "Namaste! 🙏 Yeh number MedAdhere ke kisi patient/caregiver account se "
-                "match nahi hua.\nKripya app mein registered number se WhatsApp karein, "
-                "ya support@medadhere.app se contact karein."
-            )
-            return {'status': 'no_account_match'}
-
-        WhatsAppVerificationService.generate_and_send_otp(session.phone_number, user)
-        session.state = WA_STATE_ONBOARDING_3
-        session.state_data['pending_user_id'] = str(user.id)
-        session.save(update_fields=['state', 'state_data', 'updated_at'])
-        return {'status': 'otp_sent'}
-
-    def _complete_verification(self, session, code: str) -> dict:
-        """Verify the OTP and link this WhatsApp session to the matched User account."""
-        from apps.whatsapp_bot.services import WhatsAppMessageService, WhatsAppVerificationService
-
-        result = WhatsAppVerificationService.verify_otp(session.phone_number, code)
-
-        if result == 'invalid':
-            WhatsAppMessageService.send(session.phone_number,
-                "Code galat hai. Dobara try karein."
-            )
-            return {'status': 'invalid_otp'}
-
-        if result in ('expired', 'locked'):
-            session.state = WA_STATE_IDLE
-            session.state_data = {}
-            session.save(update_fields=['state', 'state_data', 'updated_at'])
-            reason = "Code expire ho gaya" if result == 'expired' else "Bohot zyada galat attempts ho gaye"
-            WhatsAppMessageService.send(session.phone_number,
-                f"{reason}. Verify karne ke liye koi bhi message dobara bhejein."
-            )
-            return {'status': result}
-
-        # Success — `result` is the matched User instance.
-        user = result
-        session.user = user
-        session.onboarding_done = True
-        session.state = WA_STATE_IDLE
-        session.state_data = {}
-        session.save(update_fields=['user', 'onboarding_done', 'state', 'state_data', 'updated_at'])
-
-        orchestrator.broadcast(
-            WHATSAPP_BOT_AGENT,
-            ExtAgentEvent.WHATSAPP_ONBOARDING_DONE,
-            HandoverPayload(user_id=str(user.id)),
-        )
-        WhatsAppMessageService.send(session.phone_number,
-            "✅ Verified! Ab aap yahan se apni dawai ka status check kar sakte hain.\n"
-            "'help' type karein commands dekhne ke liye."
-        )
-        return {'status': 'onboarding_complete', 'user_id': str(user.id)}
-
-    def _send_today_status(self, session) -> dict:
-        from apps.whatsapp_bot.services import WhatsAppStatusService, WhatsAppMessageService
-        status_text = WhatsAppStatusService.get_today_summary(session.user_id)
-        WhatsAppMessageService.send(session.phone_number, status_text)
-        return {'status': 'status_sent'}
-
-    def _send_help_menu(self, session) -> dict:
-        from apps.whatsapp_bot.services import WhatsAppMessageService
-        WhatsAppMessageService.send(session.phone_number,
-            "MedAdhere Help:\n"
-            "• 'status' — aaj ki dava status\n"
-            "• Reminder aane par '1' = li, '2' = nahi li, '3' = baad mein\n"
-            "• App link: https://medadhere.app\n"
-            "Support: support@medadhere.app"
-        )
-        return {'status': 'help_sent'}
-
-    def _send_unknown_response(self, session) -> dict:
-        from apps.whatsapp_bot.services import WhatsAppMessageService
-        WhatsAppMessageService.send(session.phone_number,
-            "Samajh nahi aaya. 'help' type karein ya app use karein."
-        )
-        return {'status': 'unknown_handled'}
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -2606,17 +2321,17 @@ def refresh_insurance_report_cache(patient_id: str):
 
 
 @shared_task
-def cleanup_expired_whatsapp_sessions():
+def cleanup_expired_telegram_sessions():
     """
-    Every hour — set idle sessions to IDLE state if inactive > 30 min.
-    Prevents stale AWAITING_DOSE states.
+    Every hour — set idle sessions back to IDLE if inactive > 30 min.
+    Prevents stale AWAITING_DOSE_RESPONSE / AWAITING_OTP states.
     """
-    from apps.whatsapp_bot.models import WhatsAppSession
+    from apps.telegram_bot.models import TelegramSession
     stale_cutoff = timezone.now() - timedelta(minutes=30)
-    WhatsAppSession.objects.filter(
-        state=WA_STATE_AWAITING_DOSE,
+    TelegramSession.objects.filter(
+        state__in=['AWAITING_DOSE_RESPONSE', 'AWAITING_OTP', 'AWAITING_CONTACT'],
         last_activity_at__lt=stale_cutoff,
-    ).update(state=WA_STATE_IDLE, state_data={})
+    ).update(state='IDLE', state_data={})
     return {'status': 'cleaned'}
 
 
@@ -2694,9 +2409,9 @@ MEDADHERE_EXTENSION_BEAT_SCHEDULE = {
         'task'    : 'medadhere_extensions_handover.expire_insurance_report_shares',
         'schedule': crontab(hour=0, minute=0),           # Midnight UTC daily
     },
-    # WhatsApp
-    'cleanup-whatsapp-sessions': {
-        'task'    : 'medadhere_extensions_handover.cleanup_expired_whatsapp_sessions',
+    # Telegram
+    'cleanup-telegram-sessions': {
+        'task'    : 'medadhere_extensions_handover.cleanup_expired_telegram_sessions',
         'schedule': crontab(minute='*/30'),        # Every 30 minutes
     },
     # Pharmacovigilance
@@ -2886,7 +2601,6 @@ def bootstrap_extension_agents() -> list:
     extension_agents = [
         PharmacyAgent(),
         DoctorAgent(),
-        WhatsAppBotAgent(),
         DrugInteractionAgent(),
         FamilyAgent(),
         FHIRAgent(),
