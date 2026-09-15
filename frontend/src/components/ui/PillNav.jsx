@@ -241,10 +241,12 @@ const PillNav = ({
             ref={el => {
               logoRef.current = el;
             }}
-            className="rounded-full p-2 pr-6 inline-flex items-center gap-3 overflow-hidden"
+            className="rounded-full p-2 pr-6 inline-flex items-center gap-3 overflow-hidden backdrop-blur-xl border border-white/40 shadow-lg"
             style={{
               height: 'var(--nav-h)',
-              background: 'var(--base, #000)'
+              background: 'var(--base, #000)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)'
             }}
           >
             <img src={logo} alt={logoAlt} ref={logoImgRef} className="h-full w-auto object-contain block" style={{ width: 'calc(var(--nav-h) - 16px)', height: 'calc(var(--nav-h) - 16px)' }} />
@@ -258,10 +260,12 @@ const PillNav = ({
             ref={el => {
               logoRef.current = el;
             }}
-            className="rounded-full p-2 pr-6 inline-flex items-center gap-3 overflow-hidden"
+            className="rounded-full p-2 pr-6 inline-flex items-center gap-3 overflow-hidden backdrop-blur-xl border border-white/40 shadow-lg"
             style={{
               height: 'var(--nav-h)',
-              background: 'var(--base, #000)'
+              background: 'var(--base, #000)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)'
             }}
           >
             <img src={logo} alt={logoAlt} ref={logoImgRef} className="h-full w-auto object-contain block" style={{ width: 'calc(var(--nav-h) - 16px)', height: 'calc(var(--nav-h) - 16px)' }} />
@@ -271,10 +275,12 @@ const PillNav = ({
 
         <div
           ref={navItemsRef}
-          className="relative items-center rounded-full hidden md:flex ml-2"
+          className="relative items-center rounded-full hidden md:flex ml-2 backdrop-blur-xl border border-white/40 shadow-lg"
           style={{
             height: 'var(--nav-h)',
-            background: 'var(--base, #000)'
+            background: 'var(--base, #000)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)'
           }}
         >
           <ul

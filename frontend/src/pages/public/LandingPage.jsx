@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import LogoLoop from '@/components/ui/LogoLoop';
 import heroImage from '@/assets/final_hero.png';
+import heroWomanBg from '@/assets/hero_woman_bg.png';
 import logoMedicine from '@/assets/logo medicine.png';
 import { useAuthStore } from '@/stores/auth.store';
 import PillNav from '@/components/ui/PillNav';
@@ -77,12 +78,12 @@ const BentoCard = ({ icon: Icon, title, description, gradient, className, link, 
   const card = (
     <motion.div whileHover={{ y: -4, scale: 1.01 }}
       transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-      className={`relative group p-8 bg-card/80 backdrop-blur-xl rounded-3xl border border-border/60 shadow-elevation-1 hover:shadow-elevation-3 transition-all duration-500 overflow-hidden flex flex-col justify-between ${className}`}
+      className={`relative group p-8 bg-card/25 backdrop-blur-xl rounded-3xl border border-white/40 dark:border-white/10 shadow-elevation-1 hover:shadow-elevation-3 hover:bg-card/35 transition-all duration-500 overflow-hidden flex flex-col justify-between ${className}`}
     >
       <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700"
         style={{ background: gradient }} />
       <div className="relative z-10 max-w-[80%]">
-        <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center text-primary mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shadow-sm">
+        <div className="w-14 h-14 rounded-2xl bg-secondary/80 backdrop-blur-md flex items-center justify-center text-primary mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shadow-sm">
           <Icon className="w-7 h-7" />
         </div>
         <h3 className="text-2xl font-display font-bold text-foreground mb-3 tracking-tight">{title}</h3>
@@ -100,16 +101,16 @@ const BentoCard = ({ icon: Icon, title, description, gradient, className, link, 
 const StepCard = ({ number, title, description, icon: Icon, delay, gradient }) => (
   <FadeIn delay={delay} className="relative h-full">
     <motion.div whileHover={{ y: -8 }}
-      className="relative group h-full p-8 bg-card/80 backdrop-blur-xl rounded-3xl border border-border/60 shadow-elevation-1 hover:shadow-elevation-3 transition-all duration-500 overflow-hidden flex flex-col items-center text-center z-10"
+      className="relative group h-full p-8 bg-card/25 backdrop-blur-xl rounded-3xl border border-white/40 dark:border-white/10 shadow-elevation-1 hover:shadow-elevation-3 hover:bg-card/35 transition-all duration-500 overflow-hidden flex flex-col items-center text-center z-10"
     >
       <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700" style={{ background: gradient }} />
       {/* Huge Watermark Number */}
-      <div className="absolute -right-4 -top-8 text-[180px] font-display font-extrabold text-foreground/[0.03] select-none pointer-events-none group-hover:text-primary/[0.05] transition-colors duration-500 leading-none">
+      <div className="absolute -right-4 -top-8 text-[180px] font-display font-extrabold text-foreground/[0.04] select-none pointer-events-none group-hover:text-primary/[0.08] transition-colors duration-500 leading-none">
         {number}
       </div>
       
       <div className="relative z-10 mb-8 mt-4">
-        <div className="w-20 h-20 rounded-2xl bg-secondary flex items-center justify-center text-primary group-hover:scale-110 group-hover:rotate-6 transition-transform duration-500 shadow-sm relative">
+        <div className="w-20 h-20 rounded-2xl bg-secondary/80 backdrop-blur-md flex items-center justify-center text-primary group-hover:scale-110 group-hover:rotate-6 transition-transform duration-500 shadow-sm relative">
           <Icon className="w-10 h-10 relative z-10" />
           <div className="absolute inset-0 bg-primary/20 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
         </div>
@@ -128,10 +129,10 @@ const PricingCard = ({ plan, price, period, features, highlighted, delay }) => (
   <FadeIn delay={delay} className="h-full">
     <motion.div
       whileHover={{ y: -8 }}
-      className={`relative h-full p-8 rounded-3xl border-2 flex flex-col gap-8 transition-all duration-500 overflow-hidden ${
+      className={`relative h-full p-8 rounded-3xl border-2 flex flex-col gap-8 transition-all duration-500 overflow-hidden backdrop-blur-xl ${
         highlighted
-          ? 'bg-primary/[0.03] backdrop-blur-xl border-primary shadow-[0_20px_50px_rgba(11,110,122,0.15)]'
-          : 'bg-card/80 backdrop-blur-xl border-border/60 shadow-elevation-1'
+          ? 'bg-primary/20 border-primary shadow-[0_20px_50px_rgba(11,110,122,0.2)]'
+          : 'bg-card/25 border-white/40 dark:border-white/10 shadow-elevation-1 hover:bg-card/35'
       }`}
     >
       {highlighted && (
@@ -152,7 +153,7 @@ const PricingCard = ({ plan, price, period, features, highlighted, delay }) => (
         <ul className="flex flex-col gap-4">
           {features.map((f, i) => (
             <li key={i} className="flex items-start gap-3">
-              <div className={`mt-1 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${highlighted ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'}`}>
+              <div className={`mt-1 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${highlighted ? 'bg-primary/20 text-primary' : 'bg-muted/80 text-muted-foreground'}`}>
                 <CheckCircle className="w-3.5 h-3.5" />
               </div>
               <span className="text-muted-foreground text-[15px] leading-snug">{f}</span>
@@ -164,7 +165,7 @@ const PricingCard = ({ plan, price, period, features, highlighted, delay }) => (
       <div className="mt-auto relative z-10">
         <Button 
           variant={highlighted ? 'default' : 'outline'} 
-          className={`w-full h-12 rounded-2xl font-bold transition-all duration-300 ${highlighted ? 'shadow-lg shadow-primary/20 hover:scale-[1.02]' : 'hover:bg-primary/5'}`}
+          className={`w-full h-12 rounded-2xl font-bold transition-all duration-300 ${highlighted ? 'shadow-lg shadow-primary/20 hover:scale-[1.02]' : 'bg-white/30 hover:bg-white/50 border-white/40'}`}
         >
           {plan === 'Basic' ? 'Get Started' : 'Upgrade Now'}
         </Button>
@@ -175,7 +176,7 @@ const PricingCard = ({ plan, price, period, features, highlighted, delay }) => (
 
 /* ───── Testimonial Card ───── */
 const TestimonialCard = ({ quote, author, role, rating = 5 }) => (
-  <div className="p-7 bg-card rounded-2xl border border-border/60 shadow-elevation-1 flex flex-col gap-5 hover:shadow-elevation-2 transition-shadow">
+  <div className="p-7 bg-card/25 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-white/10 shadow-elevation-1 flex flex-col gap-5 hover:bg-card/35 hover:shadow-elevation-2 transition-all">
     <div className="flex gap-1">
       {[...Array(rating)].map((_, i) => <Star key={i} className="w-4 h-4 fill-accent text-accent" />)}
     </div>
@@ -234,7 +235,15 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background selection:bg-primary/20 overflow-x-hidden">
+    <div className="min-h-screen selection:bg-primary/20 overflow-x-hidden relative">
+
+      {/* ────── HOME PAGE BACKGROUND IMAGE ────── */}
+      <div 
+        className="fixed inset-0 bg-cover bg-center bg-no-repeat -z-20 pointer-events-none transition-opacity duration-700"
+        style={{ backgroundImage: `url(${heroWomanBg})` }}
+      />
+      {/* Light minimal overlay for crystal clear background image visibility */}
+      <div className="fixed inset-0 bg-background/10 backdrop-blur-[0px] -z-10 pointer-events-none" />
 
       {/* ────── NAVBAR ────── */}
       <PillNav
@@ -243,7 +252,7 @@ export default function LandingPage() {
         items={navItems}
         className="fixed top-4 left-1/2 -translate-x-1/2 z-50"
         ease="power2.easeOut"
-        baseColor="#ffffff"
+        baseColor="rgba(255, 255, 255, 0.45)"
         pillColor="#0B6E7A"
         hoveredPillTextColor="#0B6E7A"
         pillTextColor="#ffffff"
@@ -251,7 +260,7 @@ export default function LandingPage() {
       />
 
       {/* ────── HERO ────── */}
-      <section className="relative pt-32 pb-24 px-6 overflow-hidden bg-background">
+      <section className="relative pt-32 pb-24 px-6 overflow-hidden bg-transparent">
         <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-16 items-center">
           {/* Left Column: Text Content */}
           <div className="flex flex-col items-start text-left gap-8 relative z-10">
@@ -349,7 +358,7 @@ export default function LandingPage() {
       </section>
 
       {/* ────── TRUSTED BY / LOGO LOOP ────── */}
-      <section className="relative py-10 bg-muted/30 border-y border-border/30">
+      <section className="relative py-10 bg-white/10 dark:bg-slate-900/10 backdrop-blur-md border-y border-white/20">
         <div className="max-w-7xl mx-auto px-6">
           <motion.p
             initial={{ opacity: 0, y: 10 }}
@@ -379,7 +388,7 @@ export default function LandingPage() {
 
       {/* ────── STATS BANNER ────── */}
       <section id="stats" className="relative">
-        <div className="bg-gradient-to-r from-primary via-primary/95 to-primary/85 py-14">
+        <div className="bg-primary/40 backdrop-blur-xl border-y border-white/20 py-14 shadow-lg">
           <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12">
             {[
               { value: 10000, suffix: '+', label: 'Active Patients' },
@@ -391,7 +400,7 @@ export default function LandingPage() {
                 <h3 className="text-3xl md:text-4xl font-display font-extrabold text-white">
                   <Counter end={s.value} suffix={s.suffix} />
                 </h3>
-                <p className="text-white/60 text-sm font-semibold uppercase tracking-wider mt-2">{s.label}</p>
+                <p className="text-white/80 text-sm font-semibold uppercase tracking-wider mt-2">{s.label}</p>
               </FadeIn>
             ))}
           </div>
@@ -399,7 +408,7 @@ export default function LandingPage() {
       </section>
 
       {/* ────── FEATURES (BENTO BOX) ────── */}
-      <section id="features" className="py-32 px-6 relative overflow-hidden bg-muted/10">
+      <section id="features" className="py-32 px-6 relative overflow-hidden bg-transparent">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80vw] h-[80vw] max-w-[800px] max-h-[800px] bg-primary/5 rounded-full blur-[120px] pointer-events-none -z-10" />
         <div className="absolute top-0 right-0 w-[40vw] h-[40vw] bg-accent/5 rounded-full blur-[100px] pointer-events-none -z-10" />
         
@@ -507,7 +516,7 @@ export default function LandingPage() {
       </section>
 
       {/* ────── HOW IT WORKS ────── */}
-      <section id="how-it-works" className="py-32 px-6 relative bg-muted/20">
+      <section id="how-it-works" className="py-32 px-6 relative bg-transparent">
         <div className="max-w-7xl mx-auto">
           <FadeIn className="text-center mb-24">
             <span className="inline-block py-1.5 px-4 rounded-full bg-accent/10 text-accent font-bold text-sm uppercase tracking-widest mb-4">How It Works</span>
@@ -534,7 +543,7 @@ export default function LandingPage() {
       </section>
 
       {/* ────── PRICING ────── */}
-      <section id="pricing" className="py-32 px-6 relative overflow-hidden bg-background">
+      <section id="pricing" className="py-32 px-6 relative overflow-hidden bg-transparent">
         <div className="absolute -bottom-24 -left-24 w-[400px] h-[400px] bg-accent/5 rounded-full blur-[100px] pointer-events-none" />
         
         <div className="max-w-7xl mx-auto">
@@ -558,7 +567,7 @@ export default function LandingPage() {
       </section>
 
       {/* ────── TESTIMONIALS ────── */}
-      <section id="testimonials" className="py-28 px-6 bg-muted/30">
+      <section id="testimonials" className="py-28 px-6 bg-transparent">
         <div className="max-w-7xl mx-auto">
           <FadeIn className="text-center mb-16">
             <span className="text-primary font-bold text-sm uppercase tracking-widest">Testimonials</span>
@@ -577,14 +586,14 @@ export default function LandingPage() {
       {/* ────── CTA BANNER ────── */}
       <section className="py-24 px-6">
         <FadeIn>
-          <div className="max-w-4xl mx-auto text-center bg-gradient-to-br from-primary to-primary/80 rounded-3xl p-12 md:p-16 relative overflow-hidden shadow-2xl shadow-primary/20">
+          <div className="max-w-4xl mx-auto text-center bg-gradient-to-br from-primary/75 to-primary/50 backdrop-blur-xl border border-white/30 rounded-3xl p-12 md:p-16 relative overflow-hidden shadow-2xl shadow-primary/20">
             <div className="absolute inset-0 opacity-10"
               style={{ backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 50%, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
             <div className="relative z-10">
               <h2 className="text-3xl md:text-4xl font-display font-extrabold text-white mb-4">
                 Ready to Take Control of Your Health?
               </h2>
-              <p className="text-white/70 text-lg mb-8 max-w-lg mx-auto">
+              <p className="text-white/80 text-lg mb-8 max-w-lg mx-auto">
                 Join thousands of patients who never miss a dose. Start your free trial today.
               </p>
               {isAuthenticated ? (
@@ -606,7 +615,7 @@ export default function LandingPage() {
       </section>
 
       {/* ────── FOOTER ────── */}
-      <footer className="border-t border-border bg-card/50">
+      <footer className="border-t border-white/20 bg-card/20 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 py-16">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-10">
             <div className="col-span-2">
