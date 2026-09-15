@@ -213,7 +213,7 @@ export default function CompartmentManager() {
   const isPending = updateSlotTime.isPending || updateCompartments.isPending;
 
   return (
-    <div className="flex flex-col gap-8 py-4">
+    <div className="flex flex-col gap-8 py-4 max-w-[1600px] mx-auto w-full">
 
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">

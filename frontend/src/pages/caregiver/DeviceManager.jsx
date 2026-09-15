@@ -273,7 +273,7 @@ export default function DeviceManager() {
   function handleDeviceRegistered() { refetch(); }
 
   return (
-    <div className="flex flex-col gap-8 py-4">
+    <div className="flex flex-col gap-8 py-4 max-w-[1600px] mx-auto w-full">
       {/* Page header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>

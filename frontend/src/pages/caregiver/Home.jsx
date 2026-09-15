@@ -9,9 +9,10 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
 import { useCaregiverPatients, useAddCaregiverPatient } from '@/hooks/useCaregiver';
 import { useCaregiverDashboardSummary, useCaregiverCohort } from '@/hooks/useCaregiverAnalytics';
-import { useCaregiverDevices, useDispenserCompartments, useDeviceDetail } from '@/hooks/useIoT';
+import { useCaregiverDevices, useDispenserCompartments, useDeviceDetail, useDoseAlerts } from '@/hooks/useIoT';
 
 const Ring = ({ pct, size = 64 }) => {
   const safePct = Number.isFinite(pct) ? pct : 0;
@@ -100,6 +101,7 @@ export default function CaregiverHome() {
   const firstDevice = devices?.[0];
   const { data: compartments = [] } = useDispenserCompartments(firstDevice?.id);
   const { data: deviceDetail } = useDeviceDetail(firstDevice?.id);
+  const { data: doseAlertsData } = useDoseAlerts();
 
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
   const [isEmergencyPlanOpen, setIsEmergencyPlanOpen] = useState(false);
@@ -202,7 +204,7 @@ export default function CaregiverHome() {
   const loading = isLoadingPatients || isLoadingCohort || isLoadingDevices;
 
   return (
-    <div className="flex flex-col gap-8 py-4">
+    <div className="flex flex-col gap-8 py-4 max-w-[1600px] mx-auto w-full">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl md:text-4xl font-display font-extrabold flex items-center gap-3 tracking-tight">
@@ -232,7 +234,7 @@ export default function CaregiverHome() {
           { icon: Bell, label: 'Active Alerts', value: String(needsAttention), sub: 'Need attention', color: 'text-destructive' },
           { icon: Pill, label: 'Total Meds', value: String(patients.reduce((sum, patient) => sum + (patient.activeMedsCount || 0), 0)), sub: 'Across patients', color: 'text-primary' },
           { icon: Activity, label: 'Devices', value: String(devices?.length || 0), sub: 'Linked hardware', color: 'text-orange-500' },
-        ].map((stat, index) => (
+        ].map((stat) => (
           <Card key={stat.label} className="hover:shadow-elevation-2 transition-all border-border/50 group">
             <CardContent className="p-5">
               <div className="flex items-center gap-3 mb-3">
@@ -248,39 +250,160 @@ export default function CaregiverHome() {
         ))}
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 flex flex-col gap-6">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display font-bold text-2xl tracking-tight">Active Patients</h2>
-            <Link to="/caregiver/alerts" className="text-sm font-bold text-primary hover:underline flex items-center gap-1">
-              View All Alerts <ChevronRight className="w-4 h-4" />
-            </Link>
-          </div>
-          <div className="grid md:grid-cols-2 gap-6">
-            {loading ? (
-              <div className="md:col-span-2 text-sm text-muted-foreground p-6 bg-card rounded-2xl border border-border/50">Loading patient cohort...</div>
-            ) : patients.length ? (
-              patients.map((patient) => (
-                <PatientCard key={patient.id} patient={patient} onClick={(id) => navigate(`/caregiver/patient/${id}`)} />
-              ))
-            ) : (
-              <div className="md:col-span-2 flex flex-col items-center justify-center p-12 bg-card rounded-[2.5rem] border border-border/50 text-center shadow-inner relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent pointer-events-none" />
-                <div className="w-16 h-16 rounded-3xl bg-primary/10 flex items-center justify-center text-primary mb-4 relative z-10">
-                  <UserPlus className="w-8 h-8" />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+        {/* Left (lg:col-span-2): Active Patients + Live Activity Feed + Compartments */}
+        <div className="lg:col-span-2 flex flex-col gap-8">
+          {/* Active Patients Section */}
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-display font-bold text-2xl tracking-tight">Active Patients</h2>
+              <Link to="/caregiver/alerts" className="text-sm font-bold text-primary hover:underline flex items-center gap-1">
+                View All Alerts <ChevronRight className="w-4 h-4" />
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {loading ? (
+                <div className="md:col-span-2 text-sm text-muted-foreground p-6 bg-card rounded-2xl border border-border/50">Loading patient cohort...</div>
+              ) : patients.length ? (
+                patients.map((patient) => (
+                  <PatientCard key={patient.id} patient={patient} onClick={(id) => navigate(`/caregiver/patient/${id}`)} />
+                ))
+              ) : (
+                <div className="md:col-span-2 flex flex-col items-center justify-center p-12 bg-card rounded-[2.5rem] border border-border/50 text-center shadow-inner relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent pointer-events-none" />
+                  <div className="w-16 h-16 rounded-3xl bg-primary/10 flex items-center justify-center text-primary mb-4 relative z-10">
+                    <UserPlus className="w-8 h-8" />
+                  </div>
+                  <h3 className="font-display font-extrabold text-xl mb-2 relative z-10 text-foreground">No Active Patients</h3>
+                  <p className="text-muted-foreground text-sm max-w-sm mb-6 relative z-10 leading-relaxed font-medium">
+                    You don't have any patients linked to your clinical dashboard. Add a patient using their email, patient code, or phone number to start tracking adherence.
+                  </p>
+                  <Button className="rounded-xl h-11 px-6 shadow-lg shadow-primary/20 relative z-10 font-bold" onClick={() => setIsAddPatientOpen(true)}>
+                    <Plus className="w-4 h-4 mr-2" /> Add Your First Patient
+                  </Button>
                 </div>
-                <h3 className="font-display font-extrabold text-xl mb-2 relative z-10 text-foreground">No Active Patients</h3>
-                <p className="text-muted-foreground text-sm max-w-sm mb-6 relative z-10 leading-relaxed font-medium">
-                  You don't have any patients linked to your clinical dashboard. Add a patient using their email, patient code, or phone number to start tracking adherence.
-                </p>
-                <Button className="rounded-xl h-11 px-6 shadow-lg shadow-primary/20 relative z-10 font-bold" onClick={() => setIsAddPatientOpen(true)}>
-                  <Plus className="w-4 h-4 mr-2" /> Add Your First Patient
-                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Live Clinical Alerts & Dose Activity (Scrollable Container) */}
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h3 className="font-display font-bold text-xl tracking-tight flex items-center gap-2 text-foreground">
+                  <Activity className="w-5 h-5 text-primary" /> Live Clinical Alerts &amp; Dose Activity
+                </h3>
+                <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-success/10 text-success border border-success/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" /> Live Stream
+                </span>
               </div>
-            )}
+              <Link to="/caregiver/alerts" className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+                Full Feed <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            <Card className="rounded-[2rem] border border-border/60 shadow-elevation-1 overflow-hidden h-[300px] flex flex-col bg-card">
+              <CardContent className="p-5 overflow-y-auto flex-1 space-y-3">
+                {doseAlertsData?.alerts && doseAlertsData.alerts.length > 0 ? (
+                  doseAlertsData.alerts.map((alert, idx) => (
+                    <div
+                      key={alert.session_id || idx}
+                      className="p-4 rounded-2xl border border-border/60 bg-muted/20 hover:bg-muted/40 transition-all flex items-center justify-between gap-4"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                          alert.dose_status === 'missed' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-600'
+                        }`}>
+                          <AlertCircle className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-foreground truncate">{alert.device_name || 'Smart Dispenser'}</span>
+                            <Badge variant={alert.dose_status === 'missed' ? 'danger' : 'warning'} className="text-[9px] uppercase font-black tracking-wider">
+                              Slot {alert.compartment_number} · {alert.dose_status}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                            Scheduled dose at {new Date(alert.scheduled_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => navigate('/caregiver/devices')}
+                        className="h-8 px-3 text-xs font-bold rounded-lg shrink-0 border-primary/30 text-primary hover:bg-primary/10"
+                      >
+                        Inspect
+                      </Button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-6 gap-2">
+                    <div className="w-12 h-12 rounded-2xl bg-success/10 text-success flex items-center justify-center">
+                      <CheckCircle2 className="w-6 h-6" />
+                    </div>
+                    <h4 className="font-bold text-sm text-foreground">All Patients on Schedule</h4>
+                    <p className="text-xs text-muted-foreground max-w-sm">
+                      No active medication alarms or dispenser anomalies detected. Real-time patient monitoring is functioning normally.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Smart Dispenser Compartment Status (Hardware Live View) */}
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-display font-bold text-xl tracking-tight flex items-center gap-2 text-foreground">
+                <Pill className="w-5 h-5 text-primary" /> Dispenser Compartment Status
+              </h3>
+              <Link to="/caregiver/compartments" className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+                Manage Slots <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map((slotNum) => {
+                const comp = compartments.find(c => c.compartment_number === slotNum);
+                const isLow = comp && comp.current_pill_count < 5;
+                const slotTimes = { 1: 'Morning (08:00)', 2: 'Afternoon (13:00)', 3: 'Evening (18:00)', 4: 'Night (21:00)' };
+                return (
+                  <Card key={slotNum} className="border border-border/60 bg-card rounded-2xl p-4 hover:border-primary/40 transition-all shadow-sm">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Slot {slotNum}</span>
+                      {isLow ? (
+                        <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20">
+                          Low Refill
+                        </span>
+                      ) : comp?.current_pill_count > 0 ? (
+                        <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-success/10 text-success border border-success/20">
+                          OK
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                          Empty
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-2xl font-display font-black text-foreground">
+                      {comp?.current_pill_count ?? 0} <span className="text-xs font-normal text-muted-foreground">pills</span>
+                    </p>
+                    <p className="text-xs font-semibold text-primary truncate mt-1">
+                      {comp?.medication_name || comp?.time_slot_display || 'Standard Dispense'}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-muted-foreground/60 shrink-0" /> {slotTimes[slotNum]}
+                    </p>
+                  </Card>
+                );
+              })}
+            </div>
           </div>
         </div>
 
+        {/* Right (lg:col-span-1): Device Control, Emergency & Management */}
         <div className="flex flex-col gap-6">
           <h2 className="font-display font-bold text-2xl tracking-tight">Device Control</h2>
 
@@ -333,7 +456,50 @@ export default function CaregiverHome() {
             </CardContent>
           </Card>
 
-          <Card className="rounded-[2.5rem]">
+          {/* Emergency Escalation Protocol Card */}
+          <Card className="rounded-[2.5rem] border border-destructive/20 bg-destructive/5 overflow-hidden shadow-sm">
+            <CardContent className="p-6 flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-destructive/10 flex items-center justify-center text-destructive shrink-0">
+                    <Siren className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-foreground">Emergency Hotline</h4>
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Escalation Protocol</p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsEmergencyPlanOpen(true)}
+                  className="h-8 px-3 text-xs font-bold rounded-xl border-destructive/30 text-destructive hover:bg-destructive/10"
+                >
+                  Contacts
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+                <a href="tel:108" className="flex items-center gap-2 p-3 bg-card rounded-xl border border-border/60 hover:border-destructive/40 transition-colors">
+                  <Phone className="w-3.5 h-3.5 text-destructive shrink-0" />
+                  <div>
+                    <span className="text-foreground block leading-tight">Ambulance</span>
+                    <span className="text-[10px] text-muted-foreground font-normal">Dial 108</span>
+                  </div>
+                </a>
+                <a href="tel:112" className="flex items-center gap-2 p-3 bg-card rounded-xl border border-border/60 hover:border-destructive/40 transition-colors">
+                  <Phone className="w-3.5 h-3.5 text-destructive shrink-0" />
+                  <div>
+                    <span className="text-foreground block leading-tight">National</span>
+                    <span className="text-[10px] text-muted-foreground font-normal">Dial 112</span>
+                  </div>
+                </a>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Management Console */}
+          <Card className="rounded-[2.5rem] shadow-sm">
             <CardContent className="p-8">
               <h3 className="font-display font-bold text-lg mb-6 uppercase tracking-widest text-[11px] opacity-60">Management Console</h3>
               <div className="grid grid-cols-1 gap-3">

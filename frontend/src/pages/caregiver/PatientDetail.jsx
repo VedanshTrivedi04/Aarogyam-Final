@@ -89,7 +89,7 @@ export default function PatientDetail() {
   const recentAlerts = Array.isArray(alerts) ? alerts.slice(0, 4) : [];
 
   return (
-    <div className="flex flex-col gap-8 py-4">
+    <div className="flex flex-col gap-8 py-4 max-w-[1600px] mx-auto w-full">
       <div className="flex flex-col gap-6">
         <button onClick={() => navigate('/caregiver/home')} className="flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors w-fit">
           <ArrowLeft className="w-4 h-4" />
