@@ -237,13 +237,13 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen selection:bg-primary/20 overflow-x-hidden relative">
 
-      {/* ────── HOME PAGE BACKGROUND IMAGE (RELATIVE TO PAGE) ────── */}
+      {/* ────── HOME PAGE BACKGROUND IMAGE (RELATIVE TO PAGE SCROLL) ────── */}
       <div 
-        className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat pointer-events-none transition-opacity duration-700"
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat -z-20 pointer-events-none transition-opacity duration-700"
         style={{ backgroundImage: `url(${heroWomanBg})` }}
       />
       {/* Light minimal overlay for crystal clear background image visibility */}
-      <div className="absolute inset-0 w-full h-full bg-background/10 backdrop-blur-[0px] pointer-events-none" />
+      <div className="absolute inset-0 bg-background/10 backdrop-blur-[0px] -z-10 pointer-events-none" />
 
       {/* ────── NAVBAR ────── */}
       <PillNav
