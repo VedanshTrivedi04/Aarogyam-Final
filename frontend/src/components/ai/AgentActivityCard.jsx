@@ -40,12 +40,12 @@ const timeAgo = (isoString) => {
   return `${days}d ago`;
 };
 
-export const AgentActivityCard = ({ activity = [], isLoading = false }) => {
+export const AgentActivityCard = ({ activity = [], isLoading = false, className = '' }) => {
   const safeActivity = Array.isArray(activity) ? activity : [];
 
   if (isLoading) {
     return (
-      <Card className="rounded-3xl border-border bg-card shadow-elevation-1 animate-pulse p-6">
+      <Card className={`rounded-3xl border-border bg-card shadow-elevation-1 animate-pulse p-6 h-[360px] flex flex-col justify-center ${className}`}>
         <div className="flex items-center gap-3 mb-4">
           <div className="w-8 h-8 rounded-xl bg-muted" />
           <div className="h-4 w-40 bg-muted rounded" />
@@ -59,8 +59,8 @@ export const AgentActivityCard = ({ activity = [], isLoading = false }) => {
   }
 
   return (
-    <Card className="rounded-3xl border-border bg-card shadow-elevation-1 overflow-hidden">
-      <CardHeader className="p-6 pb-4 border-b border-border/40 bg-gradient-to-r from-primary/5 via-accent/5 to-transparent">
+    <Card className={`rounded-3xl border-border bg-card shadow-elevation-1 overflow-hidden h-[360px] flex flex-col ${className}`}>
+      <CardHeader className="p-5 pb-3 border-b border-border/40 bg-gradient-to-r from-primary/5 via-accent/5 to-transparent shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
             <Bot className="w-5 h-5" />
@@ -77,7 +77,7 @@ export const AgentActivityCard = ({ activity = [], isLoading = false }) => {
         </div>
       </CardHeader>
 
-      <CardContent className="p-6 space-y-2.5">
+      <CardContent className="p-5 space-y-2.5 overflow-y-auto flex-1">
         {safeActivity.length === 0 ? (
           <div className="p-6 rounded-2xl bg-muted/30 border border-border/50 text-center flex flex-col items-center gap-2">
             <History className="w-8 h-8 text-muted-foreground/60" />
