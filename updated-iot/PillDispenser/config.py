@@ -17,9 +17,9 @@ WIFI_TIMEOUT_SECONDS = 15
 # BACKEND & DEVICE CREDENTIALS
 # ============================================================
 
-BACKEND_HOST = "10.98.188.253"
-BACKEND_PORT = 8000
-BACKEND_URL = "http://%s:%d" % (BACKEND_HOST, BACKEND_PORT)
+BACKEND_HOST = "aarogyam-backend-ptty.onrender.com"
+BACKEND_PORT = 443
+BACKEND_URL = "https://aarogyam-backend-ptty.onrender.com"
 
 DEVICE_ID = "e214a30b-c919-4d23-b3f1-80557b756cdd"
 DEVICE_API_KEY = "GBfHHm3ZSwEo1MkzZSBTGrgWzXZeudFH7p2h4kbmhferTrfflRCdxyftuEF_nPvr"

@@ -15,9 +15,9 @@
 // ============================================================
 // BACKEND & DEVICE CREDENTIALS
 // ============================================================
-#define BACKEND_HOST         "10.98.188.253"
-#define BACKEND_PORT         8000
-#define BACKEND_URL          "http://10.98.188.253:8000"
+#define BACKEND_HOST         "aarogyam-backend-ptty.onrender.com"
+#define BACKEND_PORT         443
+#define BACKEND_URL          "https://aarogyam-backend-ptty.onrender.com"
 
 #define DEVICE_ID            "e214a30b-c919-4d23-b3f1-80557b756cdd"
 #define DEVICE_API_KEY       "GBfHHm3ZSwEo1MkzZSBTGrgWzXZeudFH7p2h4kbmhferTrfflRCdxyftuEF_nPvr"

@@ -165,7 +165,7 @@ function CreateZoneModal({ patientId, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         className="bg-card rounded-2xl border border-border shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto"
@@ -209,7 +209,7 @@ function CreateZoneModal({ patientId, onClose }) {
           </div>
         </div>
 
-        <div className="rounded-xl overflow-hidden border border-border mb-2" style={{ height: 280 }}>
+        <div className="isolate relative rounded-xl overflow-hidden border border-border mb-2" style={{ height: 280 }}>
           <MapContainer center={anchor || DEFAULT_CENTER} zoom={anchor ? 17 : 11} style={{ height: '100%', width: '100%' }}>
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -323,7 +323,7 @@ export default function Geofencing() {
       </div>
 
       {!zonesLoading && zones.length > 0 && (
-        <div className="rounded-2xl overflow-hidden border border-border" style={{ height: 320 }}>
+        <div className="isolate relative rounded-2xl overflow-hidden border border-border" style={{ height: 320 }}>
           <MapContainer center={mapCenter} zoom={16} style={{ height: '100%', width: '100%' }}>
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
