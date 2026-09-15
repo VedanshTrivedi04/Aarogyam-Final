@@ -22,13 +22,18 @@ def execute(
     tool_input: dict,
     trace_id: str = "",
     dry_run: bool = False,
+    policy_context: dict | None = None,
 ) -> AgentAction:
     """
     Never raises — a failure is recorded on the AgentAction row (status=FAILED,
     output={'error': ...}), never propagated to the caller. Callers can
     check `action.status` to react.
+
+    `policy_context` is optional and only used by tools with situational
+    policy (see policy_engine._CONDITIONAL_POLICY) — omitted by existing
+    callers, whose tools all resolve from the static policy map as before.
     """
-    policy = policy_engine.check(tool_name)
+    policy = policy_engine.check(tool_name, policy_context)
 
     action = AgentAction.objects.create(
         goal=goal,

@@ -17,8 +17,7 @@ def call_pharmacy_api(self, refill_order_id: str):
             'partner', 'prescription__medication', 'patient'
         ).get(id=refill_order_id)
 
-        # Assuming PharmacyAPIService takes partner in __init__ or has a class method
-        partner_order_id = PharmacyAPIService.place_order(order)
+        partner_order_id = PharmacyAPIService(order.partner).place_order(order)
         order.partner_order_id = partner_order_id
         order.status = 'PARTNER_CONFIRMED'
         order.save(update_fields=['partner_order_id', 'status', 'updated_at'])

@@ -250,7 +250,7 @@ def register_extension_events():
 
         # ── Refill ────────────────────────────────────────────────
         ExtAgentEvent.REFILL_THRESHOLD_REACHED: [
-            (PHARMACY_AGENT,      'initiate_refill_flow'),
+            (PHARMACY_AGENT,      'execute_refill_goal'),
             (NOTIFICATION_EXT,    'send_refill_reminder'),
         ],
         ExtAgentEvent.REFILL_ORDER_PLACED: [
@@ -1034,7 +1034,12 @@ class PharmacyAgent(BaseAgent):
           auto-refill triggers, refill order lifecycle.
 
     Handover In:
-        ← ClinicalApp (Celery Beat) : REFILL_THRESHOLD_REACHED
+        ← ClinicalApp (Celery Beat) : REFILL_THRESHOLD_REACHED — queues the
+          agentic reason->plan->act refill pipeline (see
+          apps/agent_runtime/services/pharmacy_pipeline.py) rather than
+          deciding inline; the LLM call this triggers has real
+          latency/failure modes that shouldn't block broadcast()'s
+          synchronous loop.
         ← DrugInteractionAgent      : DRUG_INTERACTION_DETECTED (block refill if severe)
         ← StoreAgent                : ORDER_DELIVERED (update prescription quantity)
 
@@ -1044,80 +1049,24 @@ class PharmacyAgent(BaseAgent):
     """
     agent_name = PHARMACY_AGENT
 
-    REFILL_QUANTITY_MULTIPLIER = 30  # Days worth of medication per refill
-
-    def initiate_refill_flow(self, payload: HandoverPayload) -> dict:
+    def execute_refill_goal(self, payload: HandoverPayload) -> dict:
         """
-        Called by orchestrator when remaining_quantity hits refill_alert_days threshold.
-        Checks: auto_refill_enabled, preferred_partner available, no severe interaction.
+        Handler for REFILL_THRESHOLD_REACHED — the entry point for the
+        agentic refill pipeline. Deliberately a thin enqueue, mirroring
+        AIAgent.execute_intervention_goal. The actual observe->reason->
+        plan->act->evaluate loop lives in apps.agent_runtime (see
+        apps/agent_runtime/services/pharmacy_pipeline.py).
         """
-        from apps.pharmacy.models import PharmacyIntegration, RefillOrder
-        from apps.clinical.models import Prescription
-
-        prescription = Prescription.objects.select_related(
-            'patient', 'medication'
-        ).get(id=payload.prescription_id)
-
-        # 1. Check patient has pharmacy integration configured
         try:
-            integration = PharmacyIntegration.objects.get(patient=prescription.patient)
-        except PharmacyIntegration.DoesNotExist:
-            self._notify_manual_refill_needed(prescription, payload)
-            return {'status': 'no_integration', 'action': 'manual_reminder_sent'}
-
-        # 2. Check auto-refill enabled
-        if not integration.auto_refill_enabled:
-            self._notify_manual_refill_needed(prescription, payload)
-            return {'status': 'auto_refill_disabled', 'action': 'reminder_sent'}
-
-        # 3. Check no pending refill order for this prescription
-        if RefillOrder.objects.filter(
-            prescription=prescription,
-            status__in=['PENDING', 'PARTNER_CONFIRMED', 'DISPATCHED']
-        ).exists():
-            return {'status': 'refill_already_in_progress'}
-
-        # 4. Place auto-refill order
-        return self._place_refill_order(prescription, integration, payload)
-
-    @transaction.atomic
-    def _place_refill_order(self, prescription, integration, payload) -> dict:
-        from apps.pharmacy.models import RefillOrder
-        from apps.pharmacy.services import PharmacyAPIService
-
-        quantity = (
-            prescription.dosage_per_day * self.REFILL_QUANTITY_MULTIPLIER
-        )
-        order = RefillOrder.objects.create(
-            prescription    = prescription,
-            patient         = prescription.patient,
-            partner         = integration.preferred_partner,
-            quantity_ordered= quantity,
-            status          = 'PENDING',
-            auto_triggered  = True,
-            total_amount    = PharmacyAPIService.estimate_cost(
-                integration.preferred_partner,
-                prescription.medication,
-                quantity,
-            ),
-        )
-
-        # Async API call to pharmacy partner
-        call_pharmacy_api.delay(str(order.id))
-
-        broadcast_payload = HandoverPayload(
-            patient_id     = str(prescription.patient_id),
-            prescription_id= str(prescription.id),
-            data           = {'order_id': str(order.id), 'quantity': quantity},
-            trace_id       = payload.trace_id,
-        )
-        orchestrator.broadcast(
-            PHARMACY_AGENT,
-            ExtAgentEvent.REFILL_ORDER_PLACED,
-            broadcast_payload,
-        )
-        self.log('info', f'Auto-refill order placed: {order.id}', payload)
-        return {'status': 'order_placed', 'order_id': str(order.id)}
+            from apps.agent_runtime.tasks import evaluate_refill_needed
+            evaluate_refill_needed.delay(
+                payload.prescription_id, payload.patient_id, trace_id=payload.trace_id
+            )
+            return {'queued': True}
+        except ImportError:
+            # agent_runtime not installed/available — normal in standalone/test mode
+            self.log('warning', 'agent_runtime not available — refill not queued', payload)
+            return {'queued': False, 'reason': 'agent_runtime_unavailable'}
 
     def update_prescription_quantity(self, payload: HandoverPayload) -> dict:
         """Called when refill is delivered — replenishes prescription quantity."""
@@ -1152,18 +1101,6 @@ class PharmacyAgent(BaseAgent):
         ).update(status='CANCELLED', failure_reason='SEVERE_DRUG_INTERACTION')
         self.log('warning', f'Refill blocked — severe interaction. Orders cancelled: {cancelled}', payload)
         return {'status': 'refill_blocked', 'cancelled_orders': cancelled}
-
-    def _notify_manual_refill_needed(self, prescription, payload):
-        notification_payload = HandoverPayload(
-            patient_id     = str(prescription.patient_id),
-            prescription_id= str(prescription.id),
-            data           = {'medication_name': prescription.medication.name},
-            trace_id       = payload.trace_id,
-        )
-        orchestrator.handover(
-            PHARMACY_AGENT, NOTIFICATION_EXT,
-            ExtAgentEvent.REFILL_THRESHOLD_REACHED, notification_payload,
-        )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -2552,33 +2489,10 @@ class TenantAgent(BaseAgent):
 # ═══════════════════════════════════════════════════════════════════
 # EXT-19. NEW CELERY TASKS
 # ═══════════════════════════════════════════════════════════════════
-
-@shared_task(bind=True, max_retries=3)
-def call_pharmacy_api(self, refill_order_id: str):
-    """
-    Async call to pharmacy partner API.
-    Retries on failure with exponential backoff.
-    Handover: PharmacyAgent._place_refill_order → PharmacyAPIService
-    """
-    from apps.pharmacy.models import RefillOrder
-    from apps.pharmacy.services import PharmacyAPIService
-
-    try:
-        order = RefillOrder.objects.select_related(
-            'partner', 'prescription__medication', 'patient'
-        ).get(id=refill_order_id)
-
-        partner_order_id = PharmacyAPIService(order.partner).place_order(order)
-        order.partner_order_id = partner_order_id
-        order.status = 'PARTNER_CONFIRMED'
-        order.save(update_fields=['partner_order_id', 'status', 'updated_at'])
-
-    except Exception as exc:
-        from apps.pharmacy.models import RefillOrder
-        RefillOrder.objects.filter(id=refill_order_id, status='PENDING').update(
-            status='FAILED', failure_reason=str(exc)
-        )
-        raise self.retry(exc=exc, countdown=2 ** self.request.retries * 60)
+# call_pharmacy_api lives in apps/pharmacy/tasks.py (the actually
+# Celery-registered version) — PharmacyAgent no longer calls a same-module
+# copy of it now that refill ordering goes through the agentic
+# apps.agent_runtime.services.pharmacy_pipeline / create_refill_order tool.
 
 
 @shared_task
