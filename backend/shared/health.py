@@ -43,11 +43,12 @@ class HealthCheckView(APIView):
         except Exception as e:
             details['celery_beat_error'] = str(e)
 
-        all_ok = all(status.values())
-        http_status = 200 if all_ok else 503
+        # Core services (Database and Redis) dictate whether the web API is alive
+        core_healthy = status['db'] and status['redis']
+        http_status = 200 if core_healthy else 503
 
         return APIResponse.success(
             data={**status, **details},
-            message='All systems operational.' if all_ok else 'Degraded service.',
+            message='All systems operational.' if all(status.values()) else ('Core systems operational.' if core_healthy else 'Degraded service.'),
             status=http_status,
         )
