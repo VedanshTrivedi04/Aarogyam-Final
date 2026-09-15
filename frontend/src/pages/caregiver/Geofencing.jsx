@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import { MapPin, Plus, Trash2, Shield, ShieldAlert, AlertCircle, CheckCircle2, LocateFixed, Circle as CircleIcon, Hexagon, Undo2, RotateCcw } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Circle, Polygon, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import { useGeofenceZones, useCreateGeofenceZone, useDeleteGeofenceZone, useGeofenceEvents } from '@/hooks/useGeofence';
 import { useCaregiverPatients } from '@/hooks/useCaregiver';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -47,6 +46,10 @@ function LocationPicker({ onPick }) {
 function RecenterMap({ position, zoom }) {
   const map = useMap();
   React.useEffect(() => {
+    // Modals/animated containers can mount before Leaflet reads a stable
+    // size for the map div — re-measure before recentering so tiles don't
+    // render at a stale (often huge/blank) size.
+    map.invalidateSize();
     if (position) map.setView(position, zoom ?? map.getZoom());
   }, [position, zoom, map]);
   return null;

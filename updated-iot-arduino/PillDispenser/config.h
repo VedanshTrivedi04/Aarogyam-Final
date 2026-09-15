@@ -34,8 +34,8 @@
 // ============================================================
 // MQTT BROKER CONFIGURATION
 // ============================================================
-// Set to your local PC IP or public broker (e.g. "broker.hivemq.com")
-#define MQTT_BROKER          "10.98.188.253"
+// Free cloud broker (HiveMQ Public - Port 1883)
+#define MQTT_BROKER          "broker.hivemq.com"
 #define MQTT_PORT            1883
 #define MQTT_CLIENT_ID       "esp32_dispenser_e214a30b"
 #define MQTT_USER            ""

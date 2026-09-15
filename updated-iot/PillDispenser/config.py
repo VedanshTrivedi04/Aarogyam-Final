@@ -38,8 +38,8 @@ CONFIG_SYNC_INTERVAL_SECONDS = 1800  # 30 minutes
 # MQTT BROKER CONFIGURATION
 # ============================================================
 
-# You can use local broker IP ("10.98.188.253") or free cloud broker ("broker.hivemq.com")
-MQTT_BROKER = "10.98.188.253"
+# Cloud Broker (HiveMQ Public - Port 1883)
+MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
 MQTT_CLIENT_ID = "esp32_dispenser_%s" % DEVICE_ID[:8]
 MQTT_USER = None

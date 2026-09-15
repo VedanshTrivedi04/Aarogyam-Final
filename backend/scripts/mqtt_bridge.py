@@ -41,8 +41,7 @@ except ImportError:
 # ============================================================
 # CONFIGURATION
 # ============================================================
-# Should match the MQTT_BROKER in updated-iot/PillDispenser/config.py
-MQTT_BROKER = os.getenv("MQTT_BROKER", "10.98.188.253")
+MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
 MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
 MQTT_USER = os.getenv("MQTT_USER", None)
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", None)
