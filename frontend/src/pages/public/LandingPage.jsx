@@ -6,15 +6,16 @@ import {
   Star, Activity, Bell, Smartphone,
   Zap, BarChart3, MessageCircle, Sparkles,
   Phone, Mail, MapPin, Globe, ExternalLink, Share2,
-  Play, ShieldCheck
+  Play, ShieldCheck, ChevronDown, HelpCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import LogoLoop from '@/components/ui/LogoLoop';
 import heroImage from '@/assets/final_hero.png';
-import heroWomanBg from '@/assets/hero_woman_bg.png';
+import heroWomanBg from '@/assets/media__1789505883649.png';
 import logoMedicine from '@/assets/logo medicine.png';
 import { useAuthStore } from '@/stores/auth.store';
 import PillNav from '@/components/ui/PillNav';
+import TextLoop from '@/components/ui/TextLoop';
 import {
   SiApple, SiSamsung, SiGoogle,
   SiFitbit, SiPhilipshue
@@ -74,26 +75,80 @@ const FadeIn = ({ children, className = '', delay = 0 }) => {
 };
 
 /* ───── Bento Card ───── */
-const BentoCard = ({ icon: Icon, title, description, gradient, className, link, children }) => {
+const BentoCard = ({ icon: Icon, title, description, badge, colorTheme = 'teal', className = '', link, children }) => {
+  const themes = {
+    teal: {
+      border: 'border-teal-500/20 hover:border-teal-500/50',
+      iconBg: 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20',
+      badgeBg: 'bg-teal-500/10 text-teal-700 dark:text-teal-300 border-teal-500/20',
+      glow: 'from-teal-500/10 via-teal-500/0 to-transparent',
+      hoverGlow: 'group-hover:shadow-[0_20px_40px_rgba(11,110,122,0.12)]',
+    },
+    emerald: {
+      border: 'border-emerald-500/20 hover:border-emerald-500/50',
+      iconBg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+      badgeBg: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+      glow: 'from-emerald-500/10 via-emerald-500/0 to-transparent',
+      hoverGlow: 'group-hover:shadow-[0_20px_40px_rgba(39,174,96,0.12)]',
+    },
+    purple: {
+      border: 'border-purple-500/20 hover:border-purple-500/50',
+      iconBg: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+      badgeBg: 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20',
+      glow: 'from-purple-500/10 via-purple-500/0 to-transparent',
+      hoverGlow: 'group-hover:shadow-[0_20px_40px_rgba(139,92,246,0.12)]',
+    },
+    amber: {
+      border: 'border-amber-500/20 hover:border-amber-500/50',
+      iconBg: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+      badgeBg: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
+      glow: 'from-amber-500/10 via-amber-500/0 to-transparent',
+      hoverGlow: 'group-hover:shadow-[0_20px_40px_rgba(245,166,35,0.12)]',
+    },
+    rose: {
+      border: 'border-rose-500/20 hover:border-rose-500/50',
+      iconBg: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
+      badgeBg: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20',
+      glow: 'from-rose-500/10 via-rose-500/0 to-transparent',
+      hoverGlow: 'group-hover:shadow-[0_20px_40px_rgba(244,63,94,0.12)]',
+    },
+    blue: {
+      border: 'border-blue-500/20 hover:border-blue-500/50',
+      iconBg: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+      badgeBg: 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20',
+      glow: 'from-blue-500/10 via-blue-500/0 to-transparent',
+      hoverGlow: 'group-hover:shadow-[0_20px_40px_rgba(59,130,246,0.12)]',
+    },
+  };
+
+  const t = themes[colorTheme] || themes.teal;
+
   const card = (
-    <motion.div whileHover={{ y: -4, scale: 1.01 }}
+    <motion.div whileHover={{ y: -6, scale: 1.01 }}
       transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-      className={`relative group p-8 bg-card/25 backdrop-blur-xl rounded-3xl border border-white/40 dark:border-white/10 shadow-elevation-1 hover:shadow-elevation-3 hover:bg-card/35 transition-all duration-500 overflow-hidden flex flex-col justify-between ${className}`}
+      className={`relative group p-8 bg-card/60 dark:bg-card/40 backdrop-blur-2xl rounded-3xl border ${t.border} ${t.hoverGlow} transition-all duration-500 overflow-hidden flex flex-col justify-between min-h-[280px] h-full shadow-elevation-1 ${className}`}
     >
-      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700"
-        style={{ background: gradient }} />
-      <div className="relative z-10 max-w-[80%]">
-        <div className="w-14 h-14 rounded-2xl bg-secondary/80 backdrop-blur-md flex items-center justify-center text-primary mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shadow-sm">
-          <Icon className="w-7 h-7" />
+      <div className={`absolute inset-0 bg-gradient-to-br ${t.glow} opacity-40 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none`} />
+      
+      <div className="relative z-10">
+        <div className="flex items-center justify-between mb-6">
+          <div className={`w-14 h-14 rounded-2xl ${t.iconBg} backdrop-blur-md flex items-center justify-center group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shadow-sm border`}>
+            <Icon className="w-7 h-7" />
+          </div>
+          {badge && (
+            <span className={`px-3 py-1 rounded-full text-xs font-bold border ${t.badgeBg} tracking-wide`}>
+              {badge}
+            </span>
+          )}
         </div>
         <h3 className="text-2xl font-display font-bold text-foreground mb-3 tracking-tight">{title}</h3>
-        <p className="text-muted-foreground leading-relaxed text-[15px] md:text-[16px]">{description}</p>
+        <p className="text-muted-foreground leading-relaxed text-[15px] md:text-[16px] max-w-[95%]">{description}</p>
       </div>
       {children}
     </motion.div>
   );
 
-  if (link) return <Link to={link} className={className}>{card}</Link>;
+  if (link) return <Link to={link} className="block h-full">{card}</Link>;
   return card;
 };
 
@@ -174,24 +229,128 @@ const PricingCard = ({ plan, price, period, features, highlighted, delay }) => (
   </FadeIn>
 );
 
-/* ───── Testimonial Card ───── */
-const TestimonialCard = ({ quote, author, role, rating = 5 }) => (
-  <div className="p-7 bg-card/25 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-white/10 shadow-elevation-1 flex flex-col gap-5 hover:bg-card/35 hover:shadow-elevation-2 transition-all">
-    <div className="flex gap-1">
-      {[...Array(rating)].map((_, i) => <Star key={i} className="w-4 h-4 fill-accent text-accent" />)}
-    </div>
-    <p className="text-foreground/80 italic leading-relaxed">"{quote}"</p>
-    <div className="flex items-center gap-3 mt-auto">
-      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/30 to-accent/30 flex items-center justify-center text-primary font-bold text-sm">
-        {author.charAt(0)}
+/* ───── FAQ Accordion Item ───── */
+const FaqItem = ({ question, answer, isOpen, onToggle, index }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    whileInView={{ opacity: 1, y: 0 }}
+    viewport={{ once: true }}
+    transition={{ delay: index * 0.06, duration: 0.4 }}
+    className="border border-border/60 hover:border-primary/40 rounded-2xl bg-card/60 dark:bg-card/40 backdrop-blur-xl overflow-hidden transition-all duration-300 shadow-sm"
+  >
+    <button
+      onClick={onToggle}
+      className="w-full p-6 text-left flex items-center justify-between gap-4 font-display font-bold text-base md:text-lg text-foreground cursor-pointer focus:outline-none"
+    >
+      <span className="flex items-center gap-3">
+        <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary font-bold text-xs flex items-center justify-center border border-primary/20 flex-shrink-0">
+          0{index + 1}
+        </span>
+        {question}
+      </span>
+      <motion.div
+        animate={{ rotate: isOpen ? 180 : 0 }}
+        transition={{ duration: 0.3, ease: 'easeInOut' }}
+        className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-muted-foreground flex-shrink-0"
+      >
+        <ChevronDown className="w-4 h-4" />
+      </motion.div>
+    </button>
+    <motion.div
+      initial={false}
+      animate={{ height: isOpen ? 'auto' : 0, opacity: isOpen ? 1 : 0 }}
+      transition={{ duration: 0.3, ease: 'easeInOut' }}
+      className="overflow-hidden"
+    >
+      <div className="p-6 pt-0 text-muted-foreground leading-relaxed text-[15px] border-t border-border/30 mt-2">
+        {answer}
       </div>
-      <div>
-        <h4 className="font-bold text-sm text-foreground">{author}</h4>
-        <p className="text-xs text-muted-foreground">{role}</p>
-      </div>
-    </div>
-  </div>
+    </motion.div>
+  </motion.div>
 );
+
+/* ───── FAQ Section Component ───── */
+const FaqSection = () => {
+  const [openIndex, setOpenIndex] = useState(0);
+
+  const faqs = [
+    {
+      question: "How does the IoT Smart Pillbox sync with my smartphone?",
+      answer: "The IoT Smart Pillbox automatically connects via Bluetooth and Wi-Fi to your Aarogyam mobile app. When you open a compartment, sensor data is instantly logged in real-time to verify dosage accuracy."
+    },
+    {
+      question: "What happens if a patient misses a scheduled medication dose?",
+      answer: "If a dose is missed after the scheduled window, Aarogyam triggers multi-channel escalation: starting with subtle app push notifications, followed by WhatsApp alerts, and finally initiating SMS & priority voice calls to both the patient and designated caregivers."
+    },
+    {
+      question: "Can family members or caregivers monitor adherence remotely?",
+      answer: "Yes! The Caregiver Portal allows trusted family members or healthcare providers to view live adherence feeds, track weekly completion rates, and receive real-time alerts whenever help is needed."
+    },
+    {
+      question: "How does the AI Risk Score predict adherence issues?",
+      answer: "Our machine-learning engine analyzes historical dosing patterns, schedule timing, and behavioral data to detect early signs of non-adherence, allowing proactive caregiver intervention before doses are missed."
+    },
+    {
+      question: "Are my health records and medical data secure & HIPAA compliant?",
+      answer: "Absolute privacy is our top priority. All personal health information (PHI) and dosing logs are encrypted in transit and at rest using enterprise-grade AES-256 encryption in full compliance with HIPAA standards."
+    },
+    {
+      question: "Can I export adherence reports to show my physician during checkups?",
+      answer: "Yes! You can generate and export comprehensive PDF clinical summaries with one tap. These reports detail weekly/monthly compliance rates, dosage timelines, and trend charts ready for hospital visits."
+    }
+  ];
+
+  return (
+    <section id="faq" className="py-28 px-6 relative bg-transparent">
+      <div className="max-w-4xl mx-auto">
+        <FadeIn className="text-center mb-16">
+          <span className="inline-block py-1.5 px-4 rounded-full bg-primary/10 text-primary font-bold text-xs uppercase tracking-widest mb-4">
+            Got Questions? We Have Answers
+          </span>
+          <h2 className="text-4xl md:text-5xl font-display font-extrabold text-foreground mt-3 tracking-tight">
+            Frequently Asked <span className="text-primary bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/70">Questions</span>
+          </h2>
+          <p className="text-muted-foreground text-lg max-w-xl mx-auto mt-4">
+            Everything you need to know about the Aarogyam platform, IoT dispenser, and caregiver integration.
+          </p>
+        </FadeIn>
+
+        <div className="flex flex-col gap-4">
+          {faqs.map((faq, i) => (
+            <FaqItem
+              key={i}
+              index={i}
+              question={faq.question}
+              answer={faq.answer}
+              isOpen={openIndex === i}
+              onToggle={() => setOpenIndex(openIndex === i ? -1 : i)}
+            />
+          ))}
+        </div>
+
+        {/* Still Have Questions Card */}
+        <FadeIn delay={0.4} className="mt-12">
+          <div className="p-8 rounded-2xl bg-card/60 backdrop-blur-xl border border-border/60 flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center border border-primary/20 flex-shrink-0">
+                <HelpCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-bold text-foreground text-lg">Still have questions?</h4>
+                <p className="text-muted-foreground text-sm">Can't find the answer you're looking for? Reach out to our 24/7 care team.</p>
+              </div>
+            </div>
+            <a href="mailto:support@aarogyam.health" className="flex-shrink-0">
+              <Button variant="outline" className="rounded-xl font-bold border-primary/30 text-primary hover:bg-primary/10">
+                Contact Support
+              </Button>
+            </a>
+          </div>
+        </FadeIn>
+      </div>
+    </section>
+  );
+};
 
 /* ═══════════════════════ MAIN PAGE ═══════════════════════ */
 export default function LandingPage() {
@@ -222,7 +381,7 @@ export default function LandingPage() {
     { label: 'Features', href: '#features' },
     { label: 'How It Works', href: '#how-it-works' },
     { label: 'Pricing', href: '#pricing' },
-    { label: 'Testimonials', href: '#testimonials' },
+    { label: 'FAQ', href: '#faq' },
     { label: 'Smart Dispenser', href: '/smart-dispenser', pushRight: true },
     isAuthenticated ? { label: 'Dashboard', href: dashboardPath, isHighlighted: true } : { label: 'Login', href: '/login' },
     !isAuthenticated ? { label: 'Sign Up', href: '/register', isHighlighted: true } : null
@@ -235,15 +394,15 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="min-h-screen selection:bg-primary/20 overflow-x-hidden relative isolate">
+    <div className="min-h-screen selection:bg-primary/20 overflow-x-hidden relative">
 
-      {/* ────── HOME PAGE BACKGROUND IMAGE (RELATIVE TO PAGE SCROLL) ────── */}
+      {/* ────── HOME PAGE HERO BACKGROUND IMAGE ONLY ────── */}
       <div 
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat z-0 pointer-events-none transition-opacity duration-700"
+        className="absolute top-0 left-0 right-0 h-[850px] lg:h-[900px] w-full bg-cover bg-right-top bg-no-repeat z-0 pointer-events-none transition-opacity duration-700 opacity-90"
         style={{ backgroundImage: `url(${heroWomanBg})` }}
       />
-      {/* Light minimal overlay for crystal clear background image visibility */}
-      <div className="absolute inset-0 bg-background/10 backdrop-blur-[0px] z-[1] pointer-events-none" />
+      {/* Light minimal overlay for hero section */}
+      <div className="absolute top-0 left-0 right-0 h-[850px] lg:h-[900px] w-full bg-background/5 z-0 pointer-events-none" />
 
       {/* ────── NAVBAR ────── */}
       <PillNav
@@ -265,10 +424,10 @@ export default function LandingPage() {
           {/* Left Column: Text Content */}
           <div className="flex flex-col items-start text-left gap-8 relative z-10">
             <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
-              className="px-4 py-1.5 rounded-full bg-primary/5 text-primary font-bold text-xs flex items-center gap-2 border border-primary/10"
+              className="px-4 py-1.5 rounded-full bg-primary/5 text-primary font-bold text-xs flex items-center gap-2 border border-primary/10 shadow-sm"
             >
-              <Users className="w-4 h-4" />
-              Trusted by 10,000+ Patients Across India
+              <ShieldCheck className="w-4 h-4" />
+              Clinical-Grade Smart Medication Companion
             </motion.div>
 
             <motion.h1 initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.8 }}
@@ -357,52 +516,50 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ────── TRUSTED BY / LOGO LOOP ────── */}
-      <section className="relative py-10 bg-white/10 dark:bg-slate-900/10 backdrop-blur-md border-y border-white/20">
-        <div className="max-w-7xl mx-auto px-6">
-          <motion.p
-            initial={{ opacity: 0, y: 10 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center text-sm font-semibold text-muted-foreground uppercase tracking-widest mb-8"
-          >
-            Trusted by Leading Healthcare Organizations
-          </motion.p>
-          <div className="relative h-[50px] overflow-hidden">
-            <LogoLoop
-              logos={partnerLogos}
-              speed={60}
-              direction="left"
-              logoHeight={36}
-              gap={80}
-              hoverSpeed={0}
-              scaleOnHover
-              fadeOut
-              fadeOutColor="transparent"
-              ariaLabel="Trusted healthcare partners"
-              className="text-muted-foreground/50 hover:text-muted-foreground/70 transition-colors"
-            />
-          </div>
-        </div>
+      {/* ────── ANIMATED TEXT LOOP MARQUEE ────── */}
+      <section className="relative overflow-hidden -mt-28 -mb-16 z-30 pointer-events-auto">
+        <TextLoop
+          text="AAROGYAM ✦ SMART MEDICINE ADHERENCE ✦ REAL-TIME CAREGIVER ALERTS ✦ AI-POWERED RISK ENGINE ✦ NEVER MISS A DOSE"
+          shape="wave"
+          speed={70}
+          direction="forward"
+          separator="✦"
+          curviness={22}
+          fontSize={24}
+          fontWeight={800}
+          letterSpacing={6}
+          uppercase
+          color="#0B6E7A"
+          ribbon={false}
+          ribbonColor="transparent"
+          ribbonWidth={0}
+          pauseOnHover
+        />
       </section>
 
-      {/* ────── STATS BANNER ────── */}
-      <section id="stats" className="relative">
-        <div className="bg-primary/40 backdrop-blur-xl border-y border-white/20 py-14 shadow-lg">
-          <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12">
+      {/* ────── CORE PILLARS BANNER ────── */}
+      <section id="pillars" className="relative z-10">
+        <div className="bg-primary/40 backdrop-blur-xl border-y border-white/20 py-12 shadow-lg">
+          <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8">
             {[
-              { value: 10000, suffix: '+', label: 'Active Patients' },
-              { value: 98, suffix: '%', label: 'Adherence Rate' },
-              { value: 500, suffix: '+', label: 'Partner Doctors' },
-              { value: 15, suffix: 'L+', label: 'Doses Tracked' },
-            ].map((s, i) => (
-              <FadeIn key={i} delay={i * 0.1} className="text-center">
-                <h3 className="text-3xl md:text-4xl font-display font-extrabold text-white">
-                  <Counter end={s.value} suffix={s.suffix} />
-                </h3>
-                <p className="text-white/80 text-sm font-semibold uppercase tracking-wider mt-2">{s.label}</p>
-              </FadeIn>
-            ))}
+              { icon: Bell, title: 'Smart Reminders', desc: 'WhatsApp, SMS & Voice Alerts' },
+              { icon: ShieldCheck, title: 'IoT Dispenser', desc: 'Automated Compartment Sync' },
+              { icon: Users, title: 'Caregiver Portal', desc: 'Real-Time Family Monitoring' },
+              { icon: Sparkles, title: 'AI Health Insights', desc: 'Adherence Risk Score Engine' },
+            ].map((item, i) => {
+              const IconComp = item.icon;
+              return (
+                <FadeIn key={i} delay={i * 0.1} className="text-center flex flex-col items-center">
+                  <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center text-white mb-3 shadow-sm border border-white/20">
+                    <IconComp className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base md:text-lg font-display font-bold text-white tracking-tight">
+                    {item.title}
+                  </h3>
+                  <p className="text-white/80 text-xs mt-1 leading-snug">{item.desc}</p>
+                </FadeIn>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -423,92 +580,116 @@ export default function LandingPage() {
             </p>
           </FadeIn>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-[300px]">
-            {/* Box 1: Smart Reminders (Large) */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Bento Card 1: Smart Reminders (2 Cols) */}
             <BentoCard
-              className="md:col-span-2 row-span-1"
+              className="lg:col-span-2"
               icon={Bell}
+              badge="Multi-Channel"
               title="Smart Reminders"
-              description="Multi-channel alerts via WhatsApp, SMS, Push, and Voice calls so you never miss a dose."
-              gradient="linear-gradient(135deg, rgba(11,110,122,0.08), transparent)"
+              description="Automated multi-channel alerts via WhatsApp, SMS, Push, and Voice calls to guarantee 100% adherence."
+              colorTheme="teal"
             >
-              <div className="hidden md:flex absolute right-8 top-1/2 -translate-y-1/2 flex-col gap-3 opacity-30 group-hover:opacity-100 transition-opacity duration-500">
-                <motion.div className="bg-primary text-white text-xs font-semibold py-2 px-5 rounded-full shadow-lg shadow-primary/20 flex items-center gap-2" initial={{x:20, opacity:0}} whileHover={{x:0, opacity:1}} transition={{delay:0.1}}><MessageCircle className="w-3 h-3"/> WhatsApp: Time for Metformin</motion.div>
-                <motion.div className="bg-accent text-white text-xs font-semibold py-2 px-5 rounded-full shadow-lg shadow-accent/20 flex items-center gap-2 -ml-6" initial={{x:20, opacity:0}} whileHover={{x:0, opacity:1}} transition={{delay:0.2}}><Smartphone className="w-3 h-3"/> SMS: Dose at 9:00 AM</motion.div>
+              <div className="mt-6 flex flex-wrap gap-2.5 items-center">
+                <div className="bg-teal-500/10 text-teal-700 dark:text-teal-300 text-xs font-semibold py-1.5 px-3.5 rounded-full border border-teal-500/20 flex items-center gap-2">
+                  <MessageCircle className="w-3.5 h-3.5 text-teal-600" /> WhatsApp Bot
+                </div>
+                <div className="bg-teal-500/10 text-teal-700 dark:text-teal-300 text-xs font-semibold py-1.5 px-3.5 rounded-full border border-teal-500/20 flex items-center gap-2">
+                  <Smartphone className="w-3.5 h-3.5 text-teal-600" /> Push Notification
+                </div>
+                <div className="bg-teal-500/10 text-teal-700 dark:text-teal-300 text-xs font-semibold py-1.5 px-3.5 rounded-full border border-teal-500/20 flex items-center gap-2">
+                  <Phone className="w-3.5 h-3.5 text-teal-600" /> Voice Call
+                </div>
               </div>
             </BentoCard>
 
-            {/* Box 2: Consult Doctor (Small) */}
+            {/* Bento Card 2: IoT Pillbox Hardware (1 Col) */}
             <BentoCard
-              className="col-span-1 row-span-1"
-              icon={Shield}
-              title="Consult Doctor"
-              description="Connect with verified specialists anytime via call or chat."
-              gradient="linear-gradient(135deg, rgba(39,174,96,0.08), transparent)"
-              link="/consult-doctors"
-            >
-              <div className="absolute top-10 right-10 flex items-center justify-center">
-                <div className="absolute w-4 h-4 bg-green-500 rounded-full animate-ping opacity-75" />
-                <div className="relative w-4 h-4 bg-green-500 rounded-full border-2 border-white" />
-              </div>
-            </BentoCard>
-
-            {/* Box 3: IoT Pillbox (Small) */}
-            <BentoCard
-              className="col-span-1 row-span-1"
+              className="lg:col-span-1"
               icon={Zap}
-              title="IoT Pillbox"
-              description="Connect your smart pillbox for automated tracking."
-              gradient="linear-gradient(135deg, rgba(139,92,246,0.08), transparent)"
+              badge="Hardware Sync"
+              title="IoT Smart Pillbox"
+              description="Direct compartment Bluetooth & Wi-Fi sync for automated dose verification."
+              colorTheme="purple"
             >
-              <div className="absolute bottom-8 right-8">
-                 <motion.div className="w-16 h-16 rounded-full border border-purple-500/30 flex items-center justify-center shadow-[0_0_15px_rgba(139,92,246,0.2)]" animate={{scale:[1, 1.15, 1], opacity:[0.5, 1, 0.5]}} transition={{duration:2, repeat:Infinity}}>
-                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center shadow-lg"><Smartphone className="w-4 h-4 text-white"/></div>
-                 </motion.div>
+              <div className="mt-6 pt-4 border-t border-purple-500/10 flex items-center justify-between">
+                <span className="text-xs font-semibold text-purple-700 dark:text-purple-300">Hardware Status</span>
+                <span className="text-xs font-bold text-purple-600 dark:text-purple-400 bg-purple-500/10 px-2.5 py-1 rounded-full border border-purple-500/20 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" /> Connected
+                </span>
               </div>
             </BentoCard>
 
-            {/* Box 4: Adherence Reports (Large) */}
+            {/* Bento Card 3: Caregiver Portal (1 Col) */}
             <BentoCard
-              className="md:col-span-2 row-span-1"
-              icon={BarChart3}
-              title="Adherence Reports"
-              description="Beautiful visualizations of your progress, exportable as PDF for hospital visits."
-              gradient="linear-gradient(135deg, rgba(245,166,35,0.08), transparent)"
-            >
-              <div className="absolute bottom-0 right-10 flex items-end gap-3 h-32 opacity-40 group-hover:opacity-100 transition-opacity duration-500 overflow-hidden pt-4 px-4 bg-gradient-to-t from-background/80 to-transparent rounded-t-2xl">
-                <motion.div className="w-10 bg-accent/40 rounded-t-lg" initial={{height:'30%'}} whileHover={{height:'60%'}} />
-                <motion.div className="w-10 bg-accent/70 rounded-t-lg" initial={{height:'50%'}} whileHover={{height:'85%'}} transition={{delay:0.1}}/>
-                <motion.div className="w-10 bg-accent rounded-t-lg" initial={{height:'40%'}} whileHover={{height:'100%'}} transition={{delay:0.2}}/>
-              </div>
-            </BentoCard>
-
-            {/* Box 5: Caregiver Portal (Large) */}
-            <BentoCard
-              className="md:col-span-2 row-span-1"
+              className="lg:col-span-1"
               icon={Users}
+              badge="Family Care"
               title="Caregiver Portal"
-              description="Monitor your loved ones in real-time with priority-sorted alert feeds."
-              gradient="linear-gradient(135deg, rgba(239,68,68,0.08), transparent)"
+              description="Instant alert feeds for family members when a critical dose is missed."
+              colorTheme="rose"
               link="/caregiver"
             >
-              <div className="absolute right-12 top-1/2 -translate-y-1/2 flex items-center opacity-40 group-hover:opacity-100 transition-opacity duration-500">
-                <motion.div className="w-14 h-14 rounded-full border-4 border-white bg-red-100 shadow-lg z-20 flex items-center justify-center" animate={{y:[0,-5,0]}} transition={{duration:3, repeat:Infinity}}><Users className="w-6 h-6 text-red-500"/></motion.div>
-                <div className="w-12 border-t-2 border-dashed border-red-200 -ml-4" />
-                <motion.div className="w-14 h-14 rounded-full border-4 border-white bg-red-50 shadow-lg z-10 -ml-4 flex items-center justify-center" animate={{y:[0,5,0]}} transition={{duration:3, repeat:Infinity, delay:1}}><Heart className="w-6 h-6 text-red-400"/></motion.div>
+              <div className="mt-6 pt-4 border-t border-rose-500/10 flex items-center justify-between">
+                <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">Family Alert Sync</span>
+                <span className="text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 px-2.5 py-1 rounded-full border border-rose-500/20">
+                  Active Sync
+                </span>
               </div>
             </BentoCard>
 
-            {/* Box 6: AI Risk Score (Small) */}
+            {/* Bento Card 4: AI Risk Engine (2 Cols) */}
             <BentoCard
-              className="col-span-1 row-span-1"
+              className="lg:col-span-2"
               icon={Sparkles}
-              title="AI Risk Score"
-              description="ML-powered prediction of non-adherence risk."
-              gradient="linear-gradient(135deg, rgba(59,130,246,0.08), transparent)"
+              badge="ML Engine"
+              title="AI Adherence Risk Score"
+              description="Predictive machine-learning algorithm that calculates adherence risk before doses are missed."
+              colorTheme="blue"
             >
-              <div className="absolute right-8 bottom-8 group-hover:rotate-180 group-hover:scale-110 transition-all duration-700 origin-center">
-                <Sparkles className="w-20 h-20 text-blue-500/20 drop-shadow-lg" />
+              <div className="mt-6 p-4 rounded-2xl bg-blue-500/5 border border-blue-500/15 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <div className="text-xs text-muted-foreground font-semibold">Predicted Patient Risk</div>
+                  <div className="text-sm font-bold text-blue-600 dark:text-blue-400">Low Risk — 96% Adherence Confidence</div>
+                </div>
+                <div className="w-full sm:w-36 h-2 rounded-full bg-blue-500/20 overflow-hidden">
+                  <div className="h-full bg-blue-500 rounded-full w-[96%]" />
+                </div>
+              </div>
+            </BentoCard>
+
+            {/* Bento Card 5: Consult Doctor (1 Col) */}
+            <BentoCard
+              className="lg:col-span-1"
+              icon={ShieldCheck}
+              badge="24/7 Access"
+              title="Doctor Consult"
+              description="Direct telemedicine connection to verified medical specialists."
+              colorTheme="emerald"
+              link="/consult-doctors"
+            >
+              <div className="mt-6 pt-4 border-t border-emerald-500/10 flex items-center justify-between">
+                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Specialists Online</span>
+                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" /> Available Now
+                </span>
+              </div>
+            </BentoCard>
+
+            {/* Bento Card 6: Adherence Analytics (2 Cols) */}
+            <BentoCard
+              className="lg:col-span-2"
+              icon={BarChart3}
+              badge="PDF Export"
+              title="Adherence Analytics & Reports"
+              description="Clinical-grade health trend visualizations exportable directly for doctor consultations."
+              colorTheme="amber"
+            >
+              <div className="mt-6 flex items-center justify-between pt-4 border-t border-amber-500/10">
+                <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">Monthly Clinical Summary</span>
+                <span className="text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
+                  Export PDF Report →
+                </span>
               </div>
             </BentoCard>
           </div>
@@ -566,22 +747,8 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ────── TESTIMONIALS ────── */}
-      <section id="testimonials" className="py-28 px-6 bg-transparent">
-        <div className="max-w-7xl mx-auto">
-          <FadeIn className="text-center mb-16">
-            <span className="text-primary font-bold text-sm uppercase tracking-widest">Testimonials</span>
-            <h2 className="text-4xl md:text-5xl font-display font-extrabold text-foreground mt-3">
-              Loved by <span className="text-primary">Families</span> Across India
-            </h2>
-          </FadeIn>
-          <div className="grid md:grid-cols-3 gap-7">
-            <FadeIn delay={0}><TestimonialCard quote="I used to forget my evening pills every second day. Now I'm at 100% adherence for 6 months straight!" author="Rajesh Kumar" role="Type-2 Diabetes Patient" /></FadeIn>
-            <FadeIn delay={0.1}><TestimonialCard quote="The caregiver dashboard gives me peace of mind when I'm at work. I can see exactly when Papa takes his medicines." author="Anjali Gupta" role="Daughter & Caregiver" /></FadeIn>
-            <FadeIn delay={0.2}><TestimonialCard quote="As a physician, the adherence reports help me make better clinical decisions. The AI risk scores are surprisingly accurate." author="Dr. Meera Patel" role="Cardiologist, AIIMS Delhi" /></FadeIn>
-          </div>
-        </div>
-      </section>
+      {/* ────── FAQ SECTION ────── */}
+      <FaqSection />
 
       {/* ────── CTA BANNER ────── */}
       <section className="py-24 px-6">
