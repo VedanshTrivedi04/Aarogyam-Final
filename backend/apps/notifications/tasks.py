@@ -23,7 +23,7 @@ def send_notification_async(self, notification_id: str):
         'PUSH':      NotificationDispatcher.send_push,
         'EMAIL':     NotificationDispatcher.send_email,
         'SMS':       NotificationDispatcher.send_sms,
-        'WHATSAPP':  NotificationDispatcher.send_whatsapp,
+        'TELEGRAM':  NotificationDispatcher.send_telegram,
         'VOICE':     NotificationDispatcher.send_voice,
         'IN_APP':    lambda n: True,  # already persisted
     }

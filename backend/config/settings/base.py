@@ -54,7 +54,7 @@ INSTALLED_APPS = [
     # ── Extension Apps (Phases 13–28) ────────────────────────────────
     'apps.pharmacy',           # Phase 13: Auto-Refill
     'apps.doctor_portal',      # Phase 14: Doctor Portal
-    'apps.whatsapp_bot',       # Phase 15: WhatsApp Bot
+    'apps.telegram_bot',       # Phase 15: Telegram Bot (replaces WhatsApp Bot)
     'apps.family',             # Phase 17: Family Multi-Patient
     'apps.fhir_integration',   # Phase 18: FHIR / HL7 EHR
     'apps.vitals',             # Phase 19: Vital Signs
@@ -220,8 +220,13 @@ TWILIO_ACCOUNT_SID  = os.environ.get('TWILIO_ACCOUNT_SID', '')
 TWILIO_AUTH_TOKEN   = os.environ.get('TWILIO_AUTH_TOKEN', '')
 TWILIO_FROM_NUMBER  = os.environ.get('TWILIO_FROM_NUMBER', '')
 TWILIO_MESSAGING_SERVICE_SID = os.environ.get('TWILIO_MESSAGING_SERVICE_SID', '')
-# WhatsApp Sandbox number is '+14155238886' until you get an approved Sender
-TWILIO_WHATSAPP_FROM = os.environ.get('TWILIO_WHATSAPP_FROM', '+14155238886')
+
+# Telegram Bot API (https://core.telegram.org/bots/api) — get a token from
+# @BotFather. TELEGRAM_WEBHOOK_SECRET is any string you make up yourself and
+# pass to setWebhook's secret_token param; Telegram echoes it back on every
+# webhook call so we can verify the request actually came from Telegram.
+TELEGRAM_BOT_TOKEN     = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_WEBHOOK_SECRET = os.environ.get('TELEGRAM_WEBHOOK_SECRET', '')
 
 FCM_SERVER_KEY      = os.environ.get('FCM_SERVER_KEY', '')
 SENDGRID_API_KEY    = os.environ.get('SENDGRID_API_KEY', '')

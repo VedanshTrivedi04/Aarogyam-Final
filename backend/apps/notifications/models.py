@@ -9,7 +9,7 @@ class NotificationChannel(models.TextChoices):
     PUSH        = 'PUSH',       'Push Notification (FCM/APNs)'
     EMAIL       = 'EMAIL',      'Email'
     SMS         = 'SMS',        'SMS'
-    WHATSAPP    = 'WHATSAPP',   'WhatsApp'
+    TELEGRAM    = 'TELEGRAM',   'Telegram'
     VOICE       = 'VOICE',      'Voice Call'
     IN_APP      = 'IN_APP',     'In-App'
 
