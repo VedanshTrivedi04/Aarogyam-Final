@@ -18,6 +18,8 @@ from config import (
 _client = None
 _connected = False
 _command_callback = None
+_last_ping_time = 0
+PING_INTERVAL_SECONDS = 30  # must stay well under the 60s keepalive passed to MQTTClient
 
 
 def set_command_callback(cb):
@@ -49,7 +51,7 @@ def _on_message(topic, msg):
 
 def connect_mqtt():
     """Connect to the MQTT broker and subscribe to commands topic."""
-    global _client, _connected
+    global _client, _connected, _last_ping_time
 
     if not is_connected():
         print("[MQTT] WiFi not connected. Cannot connect to MQTT broker.")
@@ -69,6 +71,7 @@ def connect_mqtt():
         _client.set_callback(_on_message)
         _client.connect()
         _connected = True
+        _last_ping_time = time.time()
         print("[MQTT] Connected to broker successfully!")
 
         # Subscribe to device command topic
@@ -91,13 +94,21 @@ def is_mqtt_connected():
 
 
 def check_messages():
-    """Non-blocking poll for incoming MQTT messages."""
-    global _client, _connected
+    """Non-blocking poll for incoming MQTT messages, plus keepalive ping."""
+    global _client, _connected, _last_ping_time
     if not _connected or _client is None:
         return
 
     try:
         _client.check_msg()
+
+        # The broker expects a PINGREQ at least every ~1.5x keepalive (60s)
+        # or it will silently drop the connection. Send one periodically
+        # whenever we've gone quiet (no publish) for a while.
+        now = time.time()
+        if now - _last_ping_time >= PING_INTERVAL_SECONDS:
+            _last_ping_time = now
+            _client.ping()
     except OSError as e:
         print("[MQTT] Socket error during check_msg:", e)
         _connected = False

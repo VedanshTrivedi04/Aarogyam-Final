@@ -36,7 +36,7 @@ class HealthCheckView(APIView):
         # 3. Celery Beat (check last periodic task run)
         try:
             from django_celery_beat.models import PeriodicTask
-            latest = PeriodicTask.objects.order_by('-last_run_at').first()
+            latest = PeriodicTask.objects.filter(last_run_at__isnull=False).order_by('-last_run_at').first()
             if latest and latest.last_run_at:
                 status['celery_beat'] = True
                 details['last_beat_run'] = latest.last_run_at.isoformat()

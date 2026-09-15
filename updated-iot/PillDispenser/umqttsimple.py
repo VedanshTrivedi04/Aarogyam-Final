@@ -30,6 +30,7 @@ class MQTTClient:
         keepalive=0,
         ssl=False,
         ssl_params={},
+        socket_timeout=10,
     ):
         if port == 0:
             port = 8883 if ssl else 1883
@@ -44,6 +45,7 @@ class MQTTClient:
         self.user = user
         self.pswd = password
         self.keepalive = keepalive
+        self.socket_timeout = socket_timeout
         self.lw_topic = None
         self.lw_msg = None
         self.lw_qos = 0
@@ -79,6 +81,10 @@ class MQTTClient:
 
     def connect(self, clean_session=True):
         self.sock = socket.socket()
+        # Bound the connect + CONNACK handshake so a stalled/unreachable
+        # broker can't hang the whole device forever; later reads use
+        # setblocking() explicitly and are unaffected by this timeout.
+        self.sock.settimeout(self.socket_timeout)
         addr = None
         for res in socket.getaddrinfo(self.server, self.port):
             if len(res[-1]) == 2:  # IPv4
@@ -92,7 +98,15 @@ class MQTTClient:
             import ussl
             self.sock = ussl.wrap_socket(self.sock, **self.ssl_params)
 
-        premsg = bytearray(b"\x10\0\0\0\0")
+        # NOTE: premsg is intentionally 6 bytes (not 5). The extra
+        # trailing zero byte is written out as part of the fixed
+        # header (see `i + 2` below) and supplies the high byte of
+        # MQTT's 2-byte protocol-name length field. Without it the
+        # CONNECT packet is 1 byte short of its declared remaining
+        # length, so the broker waits for a byte that never arrives
+        # and silently closes the connection instead of replying
+        # with a CONNACK.
+        premsg = bytearray(b"\x10\0\0\0\0\0")
         msg = bytearray(b"\x04MQTT\x04\x02\0\0")
 
         cid = self.client_id
@@ -104,12 +118,16 @@ class MQTTClient:
         if self.user is not None:
             sz += 2 + len(self.user) + 2 + len(self.pswd)
             msg[6] |= 0xC0
+        if self.keepalive:
+            assert self.keepalive < 65536
+            msg[7] |= self.keepalive >> 8
+            msg[8] |= self.keepalive & 0x00FF
         if self.lw_topic:
             sz += 2 + len(self.lw_topic) + 2 + len(self.lw_msg)
             msg[6] |= 0x4 | (self.lw_qos << 3) | (self.lw_retain << 5)
 
         i = _encode_len(premsg, sz)
-        self.sock.write(premsg, i + 1)
+        self.sock.write(premsg, i + 2)
         self.sock.write(msg)
         self._send_str(cid)
         if self.lw_topic:
@@ -119,7 +137,12 @@ class MQTTClient:
             self._send_str(self.user)
             self._send_str(self.pswd)
         resp = self.sock.read(4)
-        assert resp[0] == 0x20 and resp[1] == 0x02
+        if not resp or len(resp) < 4:
+            raise MQTTException(
+                "No CONNACK received from broker (connection closed during handshake)"
+            )
+        if resp[0] != 0x20 or resp[1] != 0x02:
+            raise MQTTException("Malformed CONNACK from broker: %r" % resp)
         if resp[3] != 0:
             raise MQTTException(resp[3])
         return resp[2] & 1
