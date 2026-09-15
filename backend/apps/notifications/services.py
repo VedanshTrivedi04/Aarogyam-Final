@@ -193,20 +193,25 @@ class NotificationDispatcher:
 
     @staticmethod
     def send_whatsapp(notification: Notification) -> bool:
-        """Send via Twilio WhatsApp."""
-        from django.conf import settings
+        """
+        Send via the Meta WhatsApp Cloud API. Note: this is a free-form text
+        message, only deliverable if the recipient has messaged the bot
+        within the last 24h. A proactive reminder to someone outside that
+        window needs a pre-approved Meta message template instead — not yet
+        wired up here.
+        """
+        from apps.whatsapp_bot.services import MetaWhatsAppService
         try:
-            from twilio.rest import Client
-            client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-            phone  = notification.user.phone_number
+            phone = notification.user.phone_number
             if not phone:
                 return False
-            msg = client.messages.create(
-                body=f'*{notification.title}*\n{notification.body}',
-                from_=f'whatsapp:{settings.TWILIO_WHATSAPP_FROM}',
-                to=f'whatsapp:{phone}',
+            result = MetaWhatsAppService.send_text(
+                phone, f'*{notification.title}*\n{notification.body}'
             )
-            notification.external_id = msg.sid
+            if 'error' in result:
+                raise RuntimeError(result['error'])
+
+            notification.external_id = (result.get('messages') or [{}])[0].get('id', '')
             notification.status      = NotificationStatus.SENT
             notification.sent_at     = timezone.now()
             notification.save(update_fields=['status', 'sent_at', 'external_id', 'updated_at'])

@@ -38,8 +38,8 @@ CONFIG_SYNC_INTERVAL_SECONDS = 1800  # 30 minutes
 # MQTT BROKER CONFIGURATION
 # ============================================================
 
-# Cloud Broker (EMQX Public - Port 1883)
-MQTT_BROKER = "broker.emqx.io"
+# Public Cloud Broker (HiveMQ - Port 1883, Plain TCP, Zero TLS overhead)
+MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
 MQTT_CLIENT_ID = "esp32_dispenser_%s" % DEVICE_ID[:8]
 MQTT_USER = None

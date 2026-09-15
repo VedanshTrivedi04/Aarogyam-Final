@@ -22,6 +22,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.production")
 import django
 django.setup()
 
+from django.utils import timezone
 from apps.iot.models import Device, DeviceCommand
 from apps.iot.services import DeviceService
 
@@ -38,13 +39,23 @@ except ImportError:
     sys.exit(1)
 
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(BASE_DIR, ".env"))
+except ImportError:
+    pass
+
 # ============================================================
 # CONFIGURATION
 # ============================================================
-MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.emqx.io")
-MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
+MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com").strip('"\'')
+MQTT_PORT = int(str(os.getenv("MQTT_PORT", 1883)).strip('"\''))
 MQTT_USER = os.getenv("MQTT_USER", None)
+if MQTT_USER:
+    MQTT_USER = MQTT_USER.strip('"\'')
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", None)
+if MQTT_PASSWORD:
+    MQTT_PASSWORD = MQTT_PASSWORD.strip('"\'')
 
 TOPIC_EVENTS = "medadhere/+/events"
 TOPIC_HEARTBEAT = "medadhere/+/heartbeat"
@@ -83,6 +94,9 @@ def on_message(client, userdata, msg):
         if not device:
             logger.warning("Device %s not found or inactive in database", device_id)
             return
+
+        # Immediately update last_seen_at so frontend UI shows ONLINE
+        Device.objects.filter(id=device.id).update(last_seen_at=timezone.now())
 
         if channel_type == "events":
             logger.info("Ingesting MQTT Event from Device %s: %s", device_id, data.get("event_type"))

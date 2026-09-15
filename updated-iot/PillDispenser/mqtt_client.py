@@ -49,9 +49,15 @@ def _on_message(topic, msg):
             print("[MQTT] Error executing command callback:", e)
 
 
+_last_reconnect_attempt = 0
+RECONNECT_DELAY_SECONDS = 15
+
+
 def connect_mqtt():
     """Connect to the MQTT broker and subscribe to commands topic."""
     global _client, _connected, _last_ping_time
+    import gc
+    gc.collect()
 
     if not is_connected():
         print("[MQTT] WiFi not connected. Cannot connect to MQTT broker.")
@@ -99,27 +105,31 @@ def is_mqtt_connected():
 
 
 def check_messages():
-    """Non-blocking poll for incoming MQTT messages, plus keepalive ping."""
-    global _client, _connected, _last_ping_time
+    """Non-blocking poll for incoming MQTT messages, keepalive ping, and auto-reconnect."""
+    global _client, _connected, _last_ping_time, _last_reconnect_attempt
+
+    # If disconnected, auto-reconnect every 15 seconds
     if not _connected or _client is None:
+        now = time.time()
+        if now - _last_reconnect_attempt >= RECONNECT_DELAY_SECONDS:
+            _last_reconnect_attempt = now
+            if is_connected():
+                connect_mqtt()
         return
 
     try:
         _client.check_msg()
 
-        # The broker expects a PINGREQ at least every ~1.5x keepalive (60s)
-        # or it will silently drop the connection. Send one periodically
-        # whenever we've gone quiet (no publish) for a while.
         now = time.time()
         if now - _last_ping_time >= PING_INTERVAL_SECONDS:
             _last_ping_time = now
             _client.ping()
     except OSError as e:
-        print("[MQTT] Socket error during check_msg:", e)
         _connected = False
         _client = None
     except Exception as e:
-        print("[MQTT] check_msg error:", e)
+        _connected = False
+        _client = None
 
 
 def publish(topic, payload):

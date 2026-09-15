@@ -95,8 +95,23 @@ class MQTTClient:
         self.sock.connect(addr)
 
         if self.ssl:
-            import ussl
-            self.sock = ussl.wrap_socket(self.sock, **self.ssl_params)
+            import gc
+            gc.collect()
+            try:
+                import ssl
+            except ImportError:
+                import ussl as ssl
+
+            if self.ssl_params:
+                try:
+                    self.sock = ssl.wrap_socket(self.sock, **self.ssl_params)
+                except (TypeError, ValueError):
+                    self.sock = ssl.wrap_socket(self.sock, server_hostname=self.server)
+            else:
+                try:
+                    self.sock = ssl.wrap_socket(self.sock, server_hostname=self.server)
+                except (TypeError, ValueError):
+                    self.sock = ssl.wrap_socket(self.sock)
 
         # NOTE: premsg is intentionally 6 bytes (not 5). The extra
         # trailing zero byte is written out as part of the fixed

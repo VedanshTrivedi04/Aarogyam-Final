@@ -1348,6 +1348,15 @@ class DoctorAgent(BaseAgent):
 # EXT-8. WHATSAPP BOT AGENT  (Phase 15)
 # ═══════════════════════════════════════════════════════════════════
 
+# WhatsAppSession.state values (must match apps.whatsapp_bot.models.WA_STATES).
+# NOTE: these look like they'd already exist from the "PHASE 15" spec text
+# above, but that whole block (lines ~404-860) is one big triple-quoted
+# docstring — none of it executes. These are the real, live definitions.
+WA_STATE_IDLE           = 'IDLE'
+WA_STATE_AWAITING_DOSE  = 'AWAITING_DOSE_RESPONSE'
+WA_STATE_ONBOARDING_3   = 'ONBOARDING_PHONE_VERIFY'
+
+
 class WhatsAppBotAgent(BaseAgent):
     """
     Owns: WhatsApp conversational flow, intent parsing, session management.
@@ -1510,57 +1519,73 @@ class WhatsAppBotAgent(BaseAgent):
         )
 
     def _handle_onboarding(self, session, body: str, intent: str) -> dict:
-        """Simple onboarding state machine for new WhatsApp users."""
-        from apps.whatsapp_bot.services import WhatsAppMessageService
+        """
+        Verification state machine for new/unlinked WhatsApp numbers.
+        No separate app step: the incoming number is matched directly
+        against an existing User.phone_number, then ownership is confirmed
+        with an OTP sent over WhatsApp.
+        """
+        from apps.whatsapp_bot.services import WhatsAppMessageService, WhatsAppVerificationService
+
         state = session.state
 
-        if state == WA_STATE_IDLE:
-            session.state = WA_STATE_ONBOARDING_1
-            session.save(update_fields=['state', 'updated_at'])
-            WhatsAppMessageService.send(session.phone_number,
-                "Namaste! 🙏 MedAdhere mein aapka swagat hai.\n"
-                "Apni bhasha chuniye:\n1. Hindi\n2. English\n3. Marathi"
-            )
-        elif state == WA_STATE_ONBOARDING_1:
-            lang = {'1':'hi','2':'en','3':'mr'}.get(body.strip(), 'hi')
-            session.state_data['language'] = lang
-            session.state = WA_STATE_ONBOARDING_2
-            session.save(update_fields=['state', 'state_data', 'updated_at'])
-            WhatsAppMessageService.send(session.phone_number,
-                "Aapka naam kya hai? (Type your name)"
-            )
-        elif state == WA_STATE_ONBOARDING_2:
-            session.state_data['name'] = body.strip()
-            session.state = WA_STATE_ONBOARDING_3
-            session.save(update_fields=['state', 'state_data', 'updated_at'])
-            WhatsAppMessageService.send(session.phone_number,
-                f"Shukriya {body.strip()}! Ab aapko app se link karna hoga.\n"
-                "Apna 6-digit MedAdhere linking code type karein:"
-            )
-        elif state == WA_STATE_ONBOARDING_3:
-            return self._complete_onboarding(session, body)
+        if state == WA_STATE_ONBOARDING_3:
+            return self._complete_verification(session, body)
 
-        return {'status': 'onboarding_in_progress'}
-
-    def _complete_onboarding(self, session, code: str) -> dict:
-        """Verify linking code and tie WhatsApp session to User account."""
-        from apps.whatsapp_bot.services import WhatsAppLinkingService
-        user = WhatsAppLinkingService.verify_code(code.strip())
+        # First contact from this (not-yet-linked) number.
+        user = WhatsAppVerificationService.find_matching_user(session.phone_number)
         if not user:
-            from apps.whatsapp_bot.services import WhatsAppMessageService
             WhatsAppMessageService.send(session.phone_number,
-                "Code galat hai ya expire ho gaya. App mein naya code generate karein."
+                "Namaste! 🙏 Yeh number MedAdhere ke kisi patient/caregiver account se "
+                "match nahi hua.\nKripya app mein registered number se WhatsApp karein, "
+                "ya support@medadhere.app se contact karein."
             )
-            return {'status': 'invalid_code'}
+            return {'status': 'no_account_match'}
 
+        WhatsAppVerificationService.generate_and_send_otp(session.phone_number, user)
+        session.state = WA_STATE_ONBOARDING_3
+        session.state_data['pending_user_id'] = str(user.id)
+        session.save(update_fields=['state', 'state_data', 'updated_at'])
+        return {'status': 'otp_sent'}
+
+    def _complete_verification(self, session, code: str) -> dict:
+        """Verify the OTP and link this WhatsApp session to the matched User account."""
+        from apps.whatsapp_bot.services import WhatsAppMessageService, WhatsAppVerificationService
+
+        result = WhatsAppVerificationService.verify_otp(session.phone_number, code)
+
+        if result == 'invalid':
+            WhatsAppMessageService.send(session.phone_number,
+                "Code galat hai. Dobara try karein."
+            )
+            return {'status': 'invalid_otp'}
+
+        if result in ('expired', 'locked'):
+            session.state = WA_STATE_IDLE
+            session.state_data = {}
+            session.save(update_fields=['state', 'state_data', 'updated_at'])
+            reason = "Code expire ho gaya" if result == 'expired' else "Bohot zyada galat attempts ho gaye"
+            WhatsAppMessageService.send(session.phone_number,
+                f"{reason}. Verify karne ke liye koi bhi message dobara bhejein."
+            )
+            return {'status': result}
+
+        # Success — `result` is the matched User instance.
+        user = result
         session.user = user
         session.onboarding_done = True
         session.state = WA_STATE_IDLE
-        session.save(update_fields=['user', 'onboarding_done', 'state', 'updated_at'])
+        session.state_data = {}
+        session.save(update_fields=['user', 'onboarding_done', 'state', 'state_data', 'updated_at'])
+
         orchestrator.broadcast(
             WHATSAPP_BOT_AGENT,
             ExtAgentEvent.WHATSAPP_ONBOARDING_DONE,
-            HandoverPayload(user_id=str(user.id), patient_id=session.state_data.get('patient_id')),
+            HandoverPayload(user_id=str(user.id)),
+        )
+        WhatsAppMessageService.send(session.phone_number,
+            "✅ Verified! Ab aap yahan se apni dawai ka status check kar sakte hain.\n"
+            "'help' type karein commands dekhne ke liye."
         )
         return {'status': 'onboarding_complete', 'user_id': str(user.id)}
 
@@ -2029,6 +2054,10 @@ class GamificationAgent(BaseAgent):
             )
 
     def _award_badge(self, patient_id: str, badge_type: str, payload: HandoverPayload):
+        if not patient_id:
+            # Event fired for a non-patient account (e.g. a caregiver) — badges
+            # are patient-scoped, so there's nothing to award.
+            return
         from apps.gamification.models import Badge
         _, created = Badge.objects.get_or_create(
             patient_id=patient_id, badge_type=badge_type
