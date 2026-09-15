@@ -4,14 +4,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Users, Bell, Activity, Heart, Clock, ChevronRight,
   Eye, Plus, BarChart3, Settings, ShieldAlert, Pill,
-  Smartphone, X, Mail,
+  Smartphone, X, Mail, Phone, Siren,
   QrCode, Loader2, UserPlus, Sparkles, CheckCircle2, AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
 import { useCaregiverPatients, useAddCaregiverPatient } from '@/hooks/useCaregiver';
 import { useCaregiverDashboardSummary, useCaregiverCohort } from '@/hooks/useCaregiverAnalytics';
-import { useCaregiverDevices, useDispenserCompartments } from '@/hooks/useIoT';
+import { useCaregiverDevices, useDispenserCompartments, useDeviceDetail } from '@/hooks/useIoT';
 
 const Ring = ({ pct, size = 64 }) => {
   const safePct = Number.isFinite(pct) ? pct : 0;
@@ -99,8 +99,10 @@ export default function CaregiverHome() {
   const { data: devices = [], isLoading: isLoadingDevices } = useCaregiverDevices();
   const firstDevice = devices?.[0];
   const { data: compartments = [] } = useDispenserCompartments(firstDevice?.id);
+  const { data: deviceDetail } = useDeviceDetail(firstDevice?.id);
 
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
+  const [isEmergencyPlanOpen, setIsEmergencyPlanOpen] = useState(false);
   const [linkMethod, setLinkMethod] = useState('create'); // 'code' | 'email' | 'create'
   const [formData, setFormData] = useState({
     code: '',
@@ -212,7 +214,7 @@ export default function CaregiverHome() {
           <p className="text-muted-foreground font-medium mt-1">Monitoring {loading ? '...' : totalPatients} linked patients under your clinical care.</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" className="h-12 px-6 rounded-xl border-destructive/20 text-destructive hover:bg-destructive/5 font-bold">
+          <Button variant="outline" className="h-12 px-6 rounded-xl border-destructive/20 text-destructive hover:bg-destructive/5 font-bold" onClick={() => setIsEmergencyPlanOpen(true)}>
             <ShieldAlert className="w-5 h-5 mr-2" /> Emergency Plan
           </Button>
           <Button variant="outline" className="h-12 px-6 rounded-xl font-bold text-primary border-primary/20 hover:bg-primary/5" onClick={() => setIsAddPatientOpen(true)}>
@@ -567,6 +569,92 @@ export default function CaregiverHome() {
                 </div>
               </form>
             )}
+          </motion.div>
+        </div>
+      )}
+
+      {/* Emergency Plan Modal */}
+      {isEmergencyPlanOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm overflow-y-auto">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="relative w-full max-w-lg bg-card rounded-[2.5rem] border border-border/80 shadow-2xl p-8"
+          >
+            <div className="flex justify-between items-start mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-destructive/10 flex items-center justify-center">
+                  <Siren className="w-6 h-6 text-destructive" />
+                </div>
+                <div>
+                  <h3 className="font-display font-extrabold text-2xl tracking-tight text-foreground">Emergency Plan</h3>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mt-0.5">Quick access to critical contacts</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsEmergencyPlanOpen(false)}
+                className="w-8 h-8 rounded-full bg-muted/40 hover:bg-muted/80 flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 mb-6">
+              <a href="tel:108" className="flex items-center justify-between p-4 rounded-2xl bg-destructive/10 hover:bg-destructive/15 transition-colors">
+                <div className="flex items-center gap-3">
+                  <Phone className="w-4 h-4 text-destructive" />
+                  <div>
+                    <p className="font-bold text-sm text-destructive">Ambulance (India)</p>
+                    <p className="text-xs text-muted-foreground">Dial 108</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-destructive" />
+              </a>
+              <a href="tel:112" className="flex items-center justify-between p-4 rounded-2xl bg-destructive/10 hover:bg-destructive/15 transition-colors">
+                <div className="flex items-center gap-3">
+                  <Phone className="w-4 h-4 text-destructive" />
+                  <div>
+                    <p className="font-bold text-sm text-destructive">National Emergency Number</p>
+                    <p className="text-xs text-muted-foreground">Dial 112</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-destructive" />
+              </a>
+              {deviceDetail?.chemist_phone && (
+                <a href={`tel:${deviceDetail.chemist_phone}`} className="flex items-center justify-between p-4 rounded-2xl bg-muted/40 hover:bg-secondary transition-colors">
+                  <div className="flex items-center gap-3">
+                    <Phone className="w-4 h-4 text-primary" />
+                    <div>
+                      <p className="font-bold text-sm text-foreground">{deviceDetail.chemist_name || 'Pharmacy / Chemist'}</p>
+                      <p className="text-xs text-muted-foreground">{deviceDetail.chemist_phone}</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </a>
+              )}
+            </div>
+
+            <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3">Linked Patients</h4>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {patients.length ? patients.map((patient) => (
+                <button
+                  key={patient.id}
+                  onClick={() => { setIsEmergencyPlanOpen(false); navigate(`/caregiver/patient/${patient.id}`); }}
+                  className="w-full flex items-center justify-between p-3 rounded-xl bg-muted/40 hover:bg-secondary transition-colors text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${patient.color} flex items-center justify-center text-white font-bold text-xs`}>
+                      {patient.avatar}
+                    </div>
+                    <span className="font-bold text-sm">{patient.name}</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </button>
+              )) : (
+                <p className="text-sm text-muted-foreground">No linked patients yet.</p>
+              )}
+            </div>
           </motion.div>
         </div>
       )}

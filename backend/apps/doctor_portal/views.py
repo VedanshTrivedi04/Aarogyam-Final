@@ -95,14 +95,25 @@ class DigitalPrescriptionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        patient_id = self.request.query_params.get('patient')
+
         if hasattr(user, 'doctor_profile'):
-            return DigitalPrescription.objects.filter(
-                doctor=user.doctor_profile
-            ).select_related('doctor__user', 'patient__user')
-        # Patient sees prescriptions sent to them
-        return DigitalPrescription.objects.filter(
-            patient__user=user
-        ).select_related('doctor__user', 'patient__user')
+            qs = DigitalPrescription.objects.filter(doctor=user.doctor_profile)
+        elif hasattr(user, 'caregiver_profile'):
+            # Caregiver sees prescriptions for patients actively linked to them
+            from apps.clinical.models import PatientCaregiverLink
+            linked_patient_ids = PatientCaregiverLink.objects.filter(
+                caregiver=user.caregiver_profile, is_active=True
+            ).values_list('patient_id', flat=True)
+            qs = DigitalPrescription.objects.filter(patient_id__in=linked_patient_ids)
+        else:
+            # Patient sees prescriptions sent to them
+            qs = DigitalPrescription.objects.filter(patient__user=user)
+
+        qs = qs.select_related('doctor__user', 'patient__user')
+        if patient_id:
+            qs = qs.filter(patient_id=patient_id)
+        return qs
 
     def perform_create(self, serializer):
         user = self.request.user

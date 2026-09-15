@@ -1,10 +1,33 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { MapPin, Plus, Trash2, Shield, ShieldAlert, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Circle, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { useGeofenceZones, useCreateGeofenceZone, useDeleteGeofenceZone, useGeofenceEvents } from '@/hooks/useGeofence';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+
+// Leaflet's default marker icons reference bundler-relative asset paths that break under Vite —
+// point them at the CDN copies that ship in the same package version instead.
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
+
+const DEFAULT_CENTER = [28.6139, 77.2090]; // New Delhi fallback
+
+function LocationPicker({ onPick }) {
+  useMapEvents({
+    click(e) {
+      onPick(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
 
 const EVENT_COLORS = {
   ENTER: { bg: 'bg-emerald-100', text: 'text-emerald-700', icon: CheckCircle2, label: 'Entered Zone' },
@@ -14,6 +37,27 @@ const EVENT_COLORS = {
 function CreateZoneModal({ onClose }) {
   const createZone = useCreateGeofenceZone();
   const [form, setForm] = useState({ name: '', latitude: '', longitude: '', radius_meters: 200 });
+  const [locating, setLocating] = useState(false);
+
+  const hasPoint = form.latitude !== '' && form.longitude !== '';
+  const markerPos = hasPoint ? [parseFloat(form.latitude), parseFloat(form.longitude)] : null;
+
+  const handlePick = (lat, lng) => {
+    setForm(f => ({ ...f, latitude: lat.toFixed(6), longitude: lng.toFixed(6) }));
+  };
+
+  const handleUseMyLocation = () => {
+    if (!navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        handlePick(pos.coords.latitude, pos.coords.longitude);
+        setLocating(false);
+      },
+      () => setLocating(false),
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -29,10 +73,39 @@ function CreateZoneModal({ onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="bg-card rounded-2xl border border-border shadow-2xl w-full max-w-md p-6"
+        className="bg-card rounded-2xl border border-border shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto"
       >
         <h2 className="text-xl font-bold mb-1">Create Safe Zone</h2>
-        <p className="text-sm text-muted-foreground mb-5">Define a safe geographic area. You'll be alerted when the patient leaves it.</p>
+        <p className="text-sm text-muted-foreground mb-4">Click anywhere on the map to drop a pin, or use your current location. Drag the radius handle below to size the zone.</p>
+
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium">Pick a location</span>
+          <button type="button" onClick={handleUseMyLocation} disabled={locating}
+            className="text-xs font-bold text-primary hover:underline disabled:opacity-50">
+            {locating ? 'Locating…' : 'Use my current location'}
+          </button>
+        </div>
+
+        <div className="rounded-xl overflow-hidden border border-border mb-4" style={{ height: 260 }}>
+          <MapContainer center={markerPos || DEFAULT_CENTER} zoom={markerPos ? 15 : 11} style={{ height: '100%', width: '100%' }}>
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            />
+            <LocationPicker onPick={handlePick} />
+            {markerPos && (
+              <>
+                <Marker
+                  position={markerPos}
+                  draggable
+                  eventHandlers={{ dragend: (e) => { const { lat, lng } = e.target.getLatLng(); handlePick(lat, lng); } }}
+                />
+                <Circle center={markerPos} radius={Number(form.radius_meters) || 200} pathOptions={{ color: '#0B6E7A', fillOpacity: 0.15 }} />
+              </>
+            )}
+          </MapContainer>
+        </div>
+
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
             <label className="text-sm font-medium mb-1 block">Zone Name</label>
@@ -56,14 +129,17 @@ function CreateZoneModal({ onClose }) {
           </div>
           <div>
             <label className="text-sm font-medium mb-1 block">Radius (meters)</label>
-            <input type="number" min={50} max={50000}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            <input type="range" min={50} max={5000} step={10}
+              className="w-full"
               value={form.radius_meters} onChange={e => setForm(f => ({ ...f, radius_meters: e.target.value }))} />
-            <p className="text-xs text-muted-foreground mt-1">Minimum 50m. Example: 200m for a building perimeter.</p>
+            <div className="flex items-center justify-between mt-1">
+              <p className="text-xs text-muted-foreground">Minimum 50m. Drag to resize the circle on the map.</p>
+              <span className="text-xs font-bold text-primary">{form.radius_meters}m</span>
+            </div>
           </div>
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
-            <Button type="submit" className="flex-1" disabled={createZone.isPending}>
+            <Button type="submit" className="flex-1" disabled={createZone.isPending || !hasPoint}>
               {createZone.isPending ? 'Creating…' : 'Create Zone'}
             </Button>
           </div>
@@ -79,6 +155,11 @@ export default function Geofencing() {
   const { data: events = [], isLoading: eventsLoading } = useGeofenceEvents({ limit: 20 });
   const deleteZone = useDeleteGeofenceZone();
 
+  const mapCenter = useMemo(() => {
+    if (!zones.length) return DEFAULT_CENTER;
+    return [parseFloat(zones[0].latitude), parseFloat(zones[0].longitude)];
+  }, [zones]);
+
   return (
     <div className="flex flex-col gap-8 py-4">
       <div className="flex items-center justify-between">
@@ -90,6 +171,26 @@ export default function Geofencing() {
           <Plus className="w-4 h-4" /> Add Zone
         </Button>
       </div>
+
+      {!zonesLoading && zones.length > 0 && (
+        <div className="rounded-2xl overflow-hidden border border-border" style={{ height: 320 }}>
+          <MapContainer center={mapCenter} zoom={12} style={{ height: '100%', width: '100%' }}>
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            />
+            {zones.map((zone, i) => {
+              const pos = [parseFloat(zone.latitude), parseFloat(zone.longitude)];
+              return (
+                <React.Fragment key={zone.id || i}>
+                  <Marker position={pos} />
+                  <Circle center={pos} radius={zone.radius_meters} pathOptions={{ color: zone.is_active ? '#0B6E7A' : '#94a3b8', fillOpacity: 0.15 }} />
+                </React.Fragment>
+              );
+            })}
+          </MapContainer>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         {/* Safe Zones list */}

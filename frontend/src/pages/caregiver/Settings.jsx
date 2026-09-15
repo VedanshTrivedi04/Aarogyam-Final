@@ -16,8 +16,13 @@ import {
   useSubscriptionInvoices, useEmailInvoice,
 } from '@/hooks/useSettings';
 
-const SettingItem = ({ icon: Icon, title, description }) => (
-  <button className="w-full flex items-center justify-between p-5 bg-card rounded-[1.5rem] border border-border/50 hover:border-primary/30 hover:bg-secondary/20 transition-all group">
+const SettingItem = ({ icon: Icon, title, description, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={!onClick}
+    className="w-full flex items-center justify-between p-5 bg-card rounded-[1.5rem] border border-border/50 hover:border-primary/30 hover:bg-secondary/20 transition-all group disabled:cursor-default disabled:hover:border-border/50 disabled:hover:bg-card"
+  >
     <div className="flex items-center gap-4">
       <div className="w-11 h-11 rounded-xl bg-muted flex items-center justify-center text-muted-foreground group-hover:bg-primary group-hover:text-white transition-all">
         <Icon className="w-5 h-5" />
@@ -124,13 +129,13 @@ export default function CaregiverSettings() {
       <div className="grid lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 flex flex-col gap-4">
           <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground ml-2">Clinical Management</h3>
-          <SettingItem icon={Users} title="Linked Patients" description="Patient list and analytics are driven by the backend caregiver cohort." />
-          <SettingItem icon={Bell} title="Alert Preferences" description="Live alerts now come from patient and IoT anomaly streams." />
-          <SettingItem icon={ShieldCheck} title="Emergency Escalation" description="Remote unlock and fill-mode commands are sent to the backend IoT queue." />
+          <SettingItem icon={Users} title="Linked Patients" description="Patient list and analytics are driven by the backend caregiver cohort." onClick={() => navigate('/caregiver/home')} />
+          <SettingItem icon={Bell} title="Alert Preferences" description="Live alerts now come from patient and IoT anomaly streams." onClick={() => navigate('/caregiver/alerts')} />
+          <SettingItem icon={ShieldCheck} title="Emergency Escalation" description="Remote unlock and fill-mode commands are sent to the backend IoT queue." onClick={() => navigate('/caregiver/unlock')} />
 
           <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground ml-2 mt-4">Account & Device</h3>
-          <SettingItem icon={User} title="Profile Information" description={user?.full_name || user?.email || 'Current signed-in account'} />
-          <SettingItem icon={Smartphone} title="Device Linkage" description={activeDevice?.device_name || 'No dispenser linked'} />
+          <SettingItem icon={User} title="Profile Information" description={user?.full_name || user?.email || 'Current signed-in account'} onClick={() => document.getElementById('caregiver-profile-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />
+          <SettingItem icon={Smartphone} title="Device Linkage" description={activeDevice?.device_name || 'No dispenser linked'} onClick={() => navigate('/caregiver/devices')} />
 
           <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground ml-2 mt-4">Subscription</h3>
 
@@ -280,7 +285,7 @@ export default function CaregiverSettings() {
         </div>
 
         <div className="flex flex-col gap-6">
-          <Card className="rounded-[2.5rem] bg-primary text-white border-none shadow-xl shadow-primary/20">
+          <Card id="caregiver-profile-card" className="rounded-[2.5rem] bg-primary text-white border-none shadow-xl shadow-primary/20">
             <CardContent className="p-8 flex flex-col items-center text-center gap-4">
               <div className="w-20 h-20 rounded-[2rem] bg-white/20 backdrop-blur-xl flex items-center justify-center text-3xl font-black">
                 {(user?.full_name || 'AS').slice(0, 2).toUpperCase()}
