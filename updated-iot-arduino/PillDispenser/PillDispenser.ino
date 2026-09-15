@@ -8,7 +8,6 @@
 #include "servo_gate.h"
 #include "ultrasonic.h"
 #include "api_client.h"
-#include "mqtt_handler.h"
 #include "dispenser.h"
 
 // ============================================================
@@ -18,28 +17,51 @@ static int lastReportedMinute = -1;
 static int lastExecutedMinute = -1;
 static unsigned long lastHeartbeatTime = 0;
 static unsigned long lastConfigSyncTime = 0;
+static unsigned long lastCommandPollTime = 0;
+static bool fillModeActive = false;
 
 // ============================================================
-// MQTT REMOTE COMMAND HANDLER
+// REMOTE COMMAND HANDLER (commands arrive via HTTP polling now)
 // ============================================================
-void handleRemoteCommand(const char* topic, const char* payload) {
-    String msg = String(payload);
+void handleRemoteCommand(const char* type, const char* payloadJson) {
+    String cmd = String(type);
+    String pj = String(payloadJson);
 
-    Serial.println();
-    Serial.println("==========================================");
-    Serial.println(">>> MQTT REMOTE COMMAND RECEIVED <<<");
-    Serial.println("==========================================");
+    int comp = 1;
+    // Check if compartment specified in the command payload
+    int cIdx = pj.indexOf("\"compartment\":");
+    if (cIdx >= 0) {
+        comp = pj.substring(cIdx + 14, cIdx + 16).toInt();
+        if (comp < 1 || comp > TOTAL_COMPARTMENTS) comp = 1;
+    }
 
-    if (msg.indexOf("DISPENSE_NOW") >= 0 || msg.indexOf("TAKE_MEDICINE_NOW") >= 0 || msg.indexOf("OPEN_GATE") >= 0) {
-        int comp = 1;
-        // Check if compartment specified in JSON
-        int cIdx = msg.indexOf("\"compartment\":");
-        if (cIdx >= 0) {
-            comp = msg.substring(cIdx + 14, cIdx + 16).toInt();
-            if (comp < 1 || comp > TOTAL_COMPARTMENTS) comp = 1;
+    if (cmd.indexOf("START_FILL_MODE") >= 0) {
+        Serial.printf("[FILL] Fill mode started at Compartment %d. Opening lid...\n", comp);
+        fillModeActive = true;
+        rotateToCompartment(comp);
+        openServo();
+    }
+    else if (cmd.indexOf("NEXT_COMPARTMENT") >= 0) {
+        Serial.printf("[FILL] Moving to Compartment %d...\n", comp);
+        closeServo();
+        delay(500); // let the gate physically settle before rotating
+        rotateToCompartment(comp);
+        openServo();
+    }
+    else if (cmd.indexOf("END_FILL_MODE") >= 0) {
+        Serial.println("[FILL] Fill mode ended. Closing lid, resuming normal schedule...");
+        closeServo();
+        fillModeActive = false;
+    }
+    else if (cmd.indexOf("DISPENSE_NOW") >= 0 || cmd.indexOf("TAKE_MEDICINE_NOW") >= 0 ||
+        cmd.indexOf("OPEN_GATE") >= 0 || cmd.indexOf("TRIGGER_DOSE") >= 0 ||
+        cmd.indexOf("FORCE_OPEN_LID") >= 0) {
+        if (fillModeActive) {
+            Serial.println("[CMD] Ignored - fill mode is active.");
+            return;
         }
 
-        Serial.printf("[MQTT] Triggering remote dispense for Compartment %d...\n", comp);
+        Serial.printf("[CMD] Triggering remote dispense for Compartment %d...\n", comp);
         publishEvent("DOSE_STARTED", comp, "Remote Dose", 1);
 
         String result = dispense(comp, "Remote Dose", 1);
@@ -50,12 +72,12 @@ void handleRemoteCommand(const char* topic, const char* payload) {
             publishEvent("DOSE_MISSED", comp, "Remote Dose", 1);
         }
     }
-    else if (msg.indexOf("SYNC_CONFIG") >= 0 || msg.indexOf("SYNC_SCHEDULE") >= 0) {
-        Serial.println("[MQTT] Refreshing schedules from backend...");
+    else if (cmd.indexOf("SYNC_CONFIG") >= 0 || cmd.indexOf("SYNC_SCHEDULE") >= 0) {
+        Serial.println("[CMD] Refreshing schedules from backend...");
         fetchSchedulesFromBackend();
     }
     else {
-        Serial.println("[MQTT] Command received and acknowledged.");
+        Serial.println("[CMD] Command received and acknowledged.");
     }
 }
 
@@ -69,7 +91,7 @@ void setup() {
     Serial.println();
     Serial.println("==========================================");
     Serial.println("       SMART PILL DISPENSER (ARDUINO)");
-    Serial.println("       HARDWARE + MQTT INTEGRATION");
+    Serial.println("       HARDWARE + HTTP INTEGRATION");
     Serial.println("==========================================");
 
     // 1. Initialize Hardware Pins
@@ -113,12 +135,14 @@ void setup() {
         // Download doctor/caregiver schedules from Backend
         fetchSchedulesFromBackend();
 
-        // Connect to MQTT Broker
-        initMQTT();
-        connectMQTT();
-
         // Report DEVICE_BOOT
         publishEvent("DEVICE_BOOT", 1);
+
+        // Send an immediate heartbeat so the dashboard shows ONLINE right away
+        // (last_seen_at on the backend is only updated by /heartbeat/, and the
+        // periodic timer below would otherwise wait a full HEARTBEAT_INTERVAL_MS).
+        publishHeartbeat("ok", "ok", "ok");
+        lastHeartbeatTime = millis();
     } else {
         Serial.println();
         Serial.println("[WIFI] Connection timeout. Running in OFFLINE mode using RTC & local schedules.");
@@ -143,8 +167,7 @@ void setup() {
     Serial.println("Servo      : READY");
     Serial.println("Ultrasonic : STANDBY");
     Serial.printf("WiFi       : %s\n", (WiFi.status() == WL_CONNECTED) ? "CONNECTED" : "OFFLINE");
-    Serial.printf("MQTT       : %s\n", isMQTTConnected() ? "CONNECTED" : "OFFLINE");
-    Serial.println("Backend    : ONLINE");
+    Serial.println("Backend    : ONLINE (HTTP)");
     Serial.println("==========================================");
 }
 
@@ -152,8 +175,13 @@ void setup() {
 // MAIN LOOP
 // ============================================================
 void loop() {
-    // 1. Process incoming MQTT messages (non-blocking)
-    loopMQTT();
+    // 1. Poll backend for remote commands (dispense-now, sync, etc.)
+    if (millis() - lastCommandPollTime >= COMMAND_POLL_INTERVAL_MS) {
+        lastCommandPollTime = millis();
+        if (WiFi.status() == WL_CONNECTED) {
+            pollDeviceCommands();
+        }
+    }
 
     // 2. Read Current Time from DS3231 RTC
     DateTime now = readRTC();
@@ -169,8 +197,8 @@ void loop() {
     char currentTimeStr[6];
     snprintf(currentTimeStr, sizeof(currentTimeStr), "%02d:%02d", now.hour, now.minute);
 
-    // 4. Check for Due Schedules
-    if (now.minute != lastExecutedMinute) {
+    // 4. Check for Due Schedules (paused while a caregiver fill session is active)
+    if (!fillModeActive && now.minute != lastExecutedMinute) {
         for (int i = 0; i < TOTAL_COMPARTMENTS; i++) {
             if (schedules[i].enabled && strcmp(schedules[i].timeStr, currentTimeStr) == 0) {
                 lastExecutedMinute = now.minute;

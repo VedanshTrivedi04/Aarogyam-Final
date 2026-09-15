@@ -26,24 +26,12 @@
 #define API_HEARTBEAT        "/api/v1/iot/heartbeat/"
 #define API_SYNC_TIME        "/api/v1/iot/sync/time/"
 #define API_CONFIG           "/api/v1/iot/devices/e214a30b-c919-4d23-b3f1-80557b756cdd/config/"
+#define API_COMMANDS         "/api/v1/iot/devices/e214a30b-c919-4d23-b3f1-80557b756cdd/commands/"
 
 #define FIRMWARE_VERSION     "3.2.0-ino"
 #define HEARTBEAT_INTERVAL_MS   300000  // 5 minutes
 #define CONFIG_SYNC_INTERVAL_MS 1800000 // 30 minutes
-
-// ============================================================
-// MQTT BROKER CONFIGURATION
-// ============================================================
-// Free cloud broker (EMQX Public - Port 1883)
-#define MQTT_BROKER          "broker.emqx.io"
-#define MQTT_PORT            1883
-#define MQTT_CLIENT_ID       "esp32_dispenser_e214a30b"
-#define MQTT_USER            ""
-#define MQTT_PASSWORD        ""
-
-#define MQTT_TOPIC_EVENTS    "medadhere/e214a30b-c919-4d23-b3f1-80557b756cdd/events"
-#define MQTT_TOPIC_HEARTBEAT "medadhere/e214a30b-c919-4d23-b3f1-80557b756cdd/heartbeat"
-#define MQTT_TOPIC_COMMANDS  "medadhere/e214a30b-c919-4d23-b3f1-80557b756cdd/commands"
+#define COMMAND_POLL_INTERVAL_MS 15000  // 15 seconds - HTTP poll for remote commands
 
 // ============================================================
 // RTC - DS3231 (I2C)

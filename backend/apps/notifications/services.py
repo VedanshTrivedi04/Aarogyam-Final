@@ -207,25 +207,19 @@ class NotificationDispatcher:
 
     @staticmethod
     def send_whatsapp(notification: Notification) -> bool:
-        """
-        Send via the Meta WhatsApp Cloud API. Note: this is a free-form text
-        message, only deliverable if the recipient has messaged the bot
-        within the last 24h. A proactive reminder to someone outside that
-        window needs a pre-approved Meta message template instead — not yet
-        wired up here.
-        """
-        from apps.whatsapp_bot.services import MetaWhatsAppService
+        """Send via Twilio WhatsApp (Sandbox, or an approved Sender in production)."""
+        from apps.whatsapp_bot.services import TwilioWhatsAppService
         try:
             phone = notification.user.phone_number
             if not phone:
                 return False
-            result = MetaWhatsAppService.send_text(
+            result = TwilioWhatsAppService.send_text(
                 phone, f'*{notification.title}*\n{notification.body}'
             )
             if 'error' in result:
                 raise RuntimeError(result['error'])
 
-            notification.external_id = (result.get('messages') or [{}])[0].get('id', '')
+            notification.external_id = result.get('sid', '')
             notification.status      = NotificationStatus.SENT
             notification.sent_at     = timezone.now()
             notification.save(update_fields=['status', 'sent_at', 'external_id', 'updated_at'])

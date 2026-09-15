@@ -1,10 +1,7 @@
-import hashlib
-import hmac
 import logging
 import re
 import secrets
 
-import requests
 from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
@@ -20,101 +17,78 @@ OTP_MAX_ATTEMPTS = 3
 def normalize_phone(phone: str) -> str:
     """
     Reduce a phone number to its last 10 digits so numbers stored with/without
-    '+91', spaces, dashes, etc. can still be matched against Meta's wa_id
-    (which arrives as bare digits with country code, e.g. '919876543210').
+    '+91', spaces, dashes, etc. can still be matched against Twilio's 'From'
+    address (which arrives as 'whatsapp:+919876543210').
     """
     digits = re.sub(r'\D', '', phone or '')
     return digits[-10:] if len(digits) >= 10 else digits
 
 
-def to_whatsapp_id(phone: str) -> str:
+def to_e164(phone: str) -> str:
     """
     Convert a phone number in whatever format it's stored in (DB entries are
-    unvalidated free text) into the bare digits-with-country-code format the
-    Meta Cloud API expects for the "to" field, e.g. '919876543210'.
-    Assumes India (+91) when no country code is present.
+    unvalidated free text) into '+<countrycode><digits>' for Twilio's To/From
+    fields, e.g. '+919876543210'. Assumes India (+91) when no country code
+    is present.
     """
     digits = re.sub(r'\D', '', phone or '')
     if len(digits) == 10:
-        return '91' + digits
-    if len(digits) == 11 and digits.startswith('0'):
-        return '91' + digits[1:]
-    return digits
+        digits = '91' + digits
+    elif len(digits) == 11 and digits.startswith('0'):
+        digits = '91' + digits[1:]
+    return '+' + digits
 
 
-class MetaWhatsAppService:
+class TwilioWhatsAppService:
     """
-    Thin wrapper around the Meta WhatsApp Cloud API (Graph API).
-    Docs: https://developers.facebook.com/docs/whatsapp/cloud-api/reference/messages
+    Thin wrapper around Twilio's WhatsApp API (Sandbox or an approved Sender).
+    Docs: https://www.twilio.com/docs/whatsapp/api
     """
-
-    @staticmethod
-    def _api_url() -> str:
-        version = getattr(settings, 'WHATSAPP_API_VERSION', 'v21.0')
-        phone_number_id = getattr(settings, 'WHATSAPP_PHONE_NUMBER_ID', '')
-        return f"https://graph.facebook.com/{version}/{phone_number_id}/messages"
 
     @staticmethod
     def send_text(to_phone: str, body: str) -> dict:
-        """
-        Send a free-form text message. Only deliverable within the 24h
-        customer-service window opened by an inbound message from the user —
-        fine for replies (OTP, status, dose confirmations), NOT guaranteed
-        for cold outbound reminders (those need an approved message template).
-        """
-        token = getattr(settings, 'WHATSAPP_ACCESS_TOKEN', None)
-        phone_number_id = getattr(settings, 'WHATSAPP_PHONE_NUMBER_ID', None)
+        account_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', None)
+        auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', None)
+        from_number = getattr(settings, 'TWILIO_WHATSAPP_FROM', '')
 
-        if not token or not phone_number_id:
-            logger.warning(f"[MOCK] WhatsApp (Meta) to {to_phone}: {body}")
+        if not account_sid or not auth_token:
+            logger.warning(f"[MOCK] WhatsApp (Twilio) to {to_phone}: {body}")
             return {"status": "mocked"}
 
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": to_whatsapp_id(to_phone),
-            "type": "text",
-            "text": {"body": body, "preview_url": False},
-        }
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
         try:
-            response = requests.post(
-                MetaWhatsAppService._api_url(),
-                json=payload,
-                headers=headers,
-                timeout=10,
+            from twilio.rest import Client
+            from twilio.base.exceptions import TwilioRestException
+
+            client = Client(account_sid, auth_token)
+            msg = client.messages.create(
+                body=body,
+                from_=f"whatsapp:{to_e164(from_number)}",
+                to=f"whatsapp:{to_e164(to_phone)}",
             )
-            if response.status_code >= 400:
-                logger.error(f"Meta WhatsApp send failed ({response.status_code}): {response.text}")
-            return response.json()
+            return {"sid": msg.sid, "status": msg.status}
+        except TwilioRestException as e:
+            logger.error(f"Twilio WhatsApp send failed: {e}")
+            return {"error": str(e)}
         except Exception as e:
-            logger.error(f"Meta WhatsApp Error: {e}")
+            logger.error(f"Twilio WhatsApp Error: {e}")
             return {"error": str(e)}
 
     @staticmethod
-    def verify_signature(raw_body: bytes, signature_header: str) -> bool:
+    def verify_signature(url: str, params: dict, signature_header: str) -> bool:
         """
-        Validate the X-Hub-Signature-256 header Meta sends on every webhook
-        POST, using the App Secret. Rejects spoofed/forged webhook calls.
+        Validate the X-Twilio-Signature header Twilio sends on every webhook
+        POST, using the Auth Token. Rejects spoofed/forged webhook calls.
+        `url` must be the exact URL Twilio requested (scheme+host+path+query,
+        no trailing modifications) and `params` the parsed form-encoded body.
         """
-        app_secret = getattr(settings, 'WHATSAPP_APP_SECRET', '')
-        if not app_secret:
-            # No secret configured (e.g. local dev without a real Meta app yet) —
-            # can't verify, so don't silently pretend it's safe.
-            logger.warning("WHATSAPP_APP_SECRET not set; skipping webhook signature check.")
+        auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', '')
+        if not auth_token:
+            logger.warning("TWILIO_AUTH_TOKEN not set; skipping webhook signature check.")
             return True
 
-        if not signature_header or not signature_header.startswith('sha256='):
-            return False
-
-        expected = hmac.new(
-            app_secret.encode('utf-8'), raw_body, hashlib.sha256
-        ).hexdigest()
-        provided = signature_header.split('sha256=', 1)[1]
-        return hmac.compare_digest(expected, provided)
+        from twilio.request_validator import RequestValidator
+        validator = RequestValidator(auth_token)
+        return validator.validate(url, params, signature_header or '')
 
 
 class WhatsAppMessageService:
@@ -122,7 +96,7 @@ class WhatsAppMessageService:
 
     @staticmethod
     def send(phone_number: str, text: str):
-        return MetaWhatsAppService.send_text(phone_number, text)
+        return TwilioWhatsAppService.send_text(phone_number, text)
 
 
 class WhatsAppVerificationService:

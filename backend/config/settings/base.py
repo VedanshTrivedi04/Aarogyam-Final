@@ -220,16 +220,8 @@ TWILIO_ACCOUNT_SID  = os.environ.get('TWILIO_ACCOUNT_SID', '')
 TWILIO_AUTH_TOKEN   = os.environ.get('TWILIO_AUTH_TOKEN', '')
 TWILIO_FROM_NUMBER  = os.environ.get('TWILIO_FROM_NUMBER', '')
 TWILIO_MESSAGING_SERVICE_SID = os.environ.get('TWILIO_MESSAGING_SERVICE_SID', '')
-
-# Meta WhatsApp Cloud API (https://developers.facebook.com/docs/whatsapp/cloud-api)
-WHATSAPP_ACCESS_TOKEN    = os.environ.get('WHATSAPP_ACCESS_TOKEN', '')
-WHATSAPP_PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '')
-WHATSAPP_BUSINESS_ACCOUNT_ID = os.environ.get('WHATSAPP_BUSINESS_ACCOUNT_ID', '')
-# Arbitrary shared secret you choose yourself and enter in the Meta webhook config
-WHATSAPP_VERIFY_TOKEN    = os.environ.get('WHATSAPP_VERIFY_TOKEN', '')
-# Meta App Secret, used to validate the X-Hub-Signature-256 header on inbound webhooks
-WHATSAPP_APP_SECRET      = os.environ.get('WHATSAPP_APP_SECRET', '')
-WHATSAPP_API_VERSION     = os.environ.get('WHATSAPP_API_VERSION', 'v21.0')
+# WhatsApp Sandbox number is '+14155238886' until you get an approved Sender
+TWILIO_WHATSAPP_FROM = os.environ.get('TWILIO_WHATSAPP_FROM', '+14155238886')
 
 FCM_SERVER_KEY      = os.environ.get('FCM_SERVER_KEY', '')
 SENDGRID_API_KEY    = os.environ.get('SENDGRID_API_KEY', '')
