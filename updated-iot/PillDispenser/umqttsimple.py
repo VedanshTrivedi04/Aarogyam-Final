@@ -66,7 +66,13 @@ class MQTTClient:
 
     def connect(self, clean_session=True):
         self.sock = socket.socket()
-        addr = socket.getaddrinfo(self.server, self.port)[0][-1]
+        addr = None
+        for res in socket.getaddrinfo(self.server, self.port):
+            if len(res[-1]) == 2:
+                addr = res[-1]
+                break
+        if addr is None:
+            addr = socket.getaddrinfo(self.server, self.port)[0][-1]
         self.sock.connect(addr)
         if self.ssl:
             import ussl
@@ -150,7 +156,7 @@ class MQTTClient:
 
     def subscribe(self, topic, qos=0):
         assert self.cb is not None, "Subscribe callback is not set"
-        pkt = bytearray(b"\x82\0\0\0")
+        pkt = bytearray(b"\x82\0\0\0\0")
         self.pid += 1
         struct.pack_into("!H", pkt, 1, 2 + 2 + len(topic) + 1)
         struct.pack_into("!H", pkt, 3, self.pid)

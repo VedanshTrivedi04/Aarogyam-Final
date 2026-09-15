@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   User, Users, Bell, ShieldCheck, Smartphone, ArrowLeft,
-  ChevronRight, MessageCircle, Clock, Save, LogOut, Loader2,
+  ChevronRight, MessageCircle, MessageSquare, Phone, Clock, Save, LogOut, Loader2,
   Crown, X, Zap, Star, CreditCard, Mail, Download,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -10,10 +10,12 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { useAuthStore } from '@/stores/auth.store';
 import { useCaregiverDevices, useDeviceDetail, useUpdateDeviceDetail } from '@/hooks/useIoT';
+import { useCaregiverPatients, useCaregiverPatientDetail, useCaregiverPatientAdherence } from '@/hooks/useCaregiver';
 import {
   useCurrentSubscription, useCancelSubscription,
   useSubscriptionPlans, useUpgradeSubscription,
   useSubscriptionInvoices, useEmailInvoice,
+  useNotificationPrefs, useUpdateNotificationPrefs,
 } from '@/hooks/useSettings';
 
 const SettingItem = ({ icon: Icon, title, description, onClick }) => (
@@ -36,6 +38,195 @@ const SettingItem = ({ icon: Icon, title, description, onClick }) => (
   </button>
 );
 
+function ToggleSwitch({ checked, onChange, disabled }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${checked ? 'bg-primary' : 'bg-muted'} disabled:opacity-50`}
+    >
+      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-5' : 'translate-x-0'}`} />
+    </button>
+  );
+}
+
+function DetailTile({ label, value }) {
+  return (
+    <div className="p-3 rounded-xl bg-muted/40">
+      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{label}</p>
+      <p className="font-bold text-sm mt-1 truncate">{value}</p>
+    </div>
+  );
+}
+
+function PatientDetailModal({ patientId, patientName, onBack, onClose }) {
+  const { data: detail, isLoading } = useCaregiverPatientDetail(patientId);
+  const { data: adherence } = useCaregiverPatientAdherence(patientId);
+
+  const age = detail?.date_of_birth
+    ? Math.max(0, new Date().getFullYear() - new Date(detail.date_of_birth).getFullYear())
+    : null;
+
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-card rounded-2xl border border-border shadow-2xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto">
+        <div className="flex items-center gap-2 mb-1">
+          <button onClick={onBack} className="w-8 h-8 rounded-full bg-muted/40 hover:bg-muted/80 flex items-center justify-center transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <h2 className="text-lg font-bold flex-1 truncate">{patientName || detail?.full_name || 'Patient'}</h2>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-muted/40 hover:bg-muted/80 flex items-center justify-center transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading patient…
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <DetailTile label="Patient Code" value={detail?.patient_code || '--'} />
+            <DetailTile label="Email" value={detail?.email || '--'} />
+            <DetailTile label="Timezone" value={detail?.timezone || '--'} />
+            <DetailTile label="Age" value={age != null ? `${age} yrs` : '--'} />
+            <DetailTile label="Hospitalized" value={detail?.is_hospitalized ? (detail?.hospital_name || 'Yes') : 'No'} />
+            <DetailTile label="Travel Mode" value={detail?.is_travel_mode ? 'Active' : 'Off'} />
+            <DetailTile label="Weekly Adherence" value={adherence?.adherence_pct != null ? `${Math.round(adherence.adherence_pct)}%` : '--'} />
+            <DetailTile label="Pending Doses" value={adherence?.pending ?? '--'} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LinkedPatientsModal({ onClose }) {
+  const { data: patients = [], isLoading } = useCaregiverPatients();
+  const [selectedPatient, setSelectedPatient] = useState(null);
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="bg-card rounded-2xl border border-border shadow-2xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto">
+          <div className="flex justify-between items-start mb-1">
+            <h2 className="text-xl font-bold">Linked Patients</h2>
+            <button onClick={onClose} className="w-8 h-8 rounded-full bg-muted/40 hover:bg-muted/80 flex items-center justify-center transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <p className="text-sm text-muted-foreground mb-5">Tap a patient to see their clinical details.</p>
+
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+            </div>
+          ) : patients.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-10">No patients linked yet.</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {patients.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setSelectedPatient(p)}
+                  className="w-full flex items-center justify-between p-4 rounded-2xl bg-muted/30 hover:bg-secondary/40 border border-border/40 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${p.color} flex items-center justify-center text-white font-bold text-xs shrink-0`}>
+                      {p.avatar}
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm">{p.name}</p>
+                      <p className="text-xs text-muted-foreground">{p.patientCode}</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {selectedPatient && (
+        <PatientDetailModal
+          patientId={selectedPatient.id}
+          patientName={selectedPatient.name}
+          onBack={() => setSelectedPatient(null)}
+          onClose={() => { setSelectedPatient(null); onClose(); }}
+        />
+      )}
+    </>
+  );
+}
+
+const ALERT_CHANNELS = [
+  { key: 'push_enabled', label: 'Push Notifications', description: 'In-app alerts on this device', icon: Smartphone },
+  { key: 'email_enabled', label: 'Email', description: 'Sent to your registered email address', icon: Mail },
+  { key: 'sms_enabled', label: 'SMS', description: 'Text message to your registered phone number', icon: MessageSquare },
+  { key: 'whatsapp_enabled', label: 'WhatsApp', description: 'Message via WhatsApp (premium plans)', icon: MessageCircle },
+  { key: 'voice_call_enabled', label: 'Voice Call', description: 'Automated call for critical alerts (premium plans)', icon: Phone },
+];
+
+function AlertPreferencesModal({ onClose }) {
+  const { data: prefs, isLoading } = useNotificationPrefs();
+  const updatePrefs = useUpdateNotificationPrefs();
+  const [savingField, setSavingField] = useState(null);
+
+  const handleToggle = async (key, value) => {
+    setSavingField(key);
+    try {
+      await updatePrefs.mutateAsync({ [key]: value });
+    } finally {
+      setSavingField(null);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-card rounded-2xl border border-border shadow-2xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto">
+        <div className="flex justify-between items-start mb-1">
+          <h2 className="text-xl font-bold">Alert Preferences</h2>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-muted/40 hover:bg-muted/80 flex items-center justify-center transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-sm text-muted-foreground mb-5">Choose which channels should deliver missed-dose, geofence, and device alerts to you.</p>
+
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {ALERT_CHANNELS.map((ch) => (
+              <div key={ch.key} className="flex items-center justify-between p-4 rounded-2xl bg-muted/30 border border-border/40">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                    <ch.icon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm">{ch.label}</p>
+                    <p className="text-xs text-muted-foreground">{ch.description}</p>
+                  </div>
+                </div>
+                {savingField === ch.key ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground shrink-0" />
+                ) : (
+                  <ToggleSwitch checked={!!prefs?.[ch.key]} onChange={(val) => handleToggle(ch.key, val)} />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function CaregiverSettings() {
   const navigate = useNavigate();
   const { user, clearSession } = useAuthStore();
@@ -49,6 +240,8 @@ export default function CaregiverSettings() {
   const [payingPlanId, setPayingPlanId]   = useState(null);
   const [emailingInvoiceId, setEmailingId] = useState(null);
   const [subToast, setSubToast]            = useState(null);
+  const [showLinkedPatients, setShowLinkedPatients] = useState(false);
+  const [showAlertPrefs, setShowAlertPrefs]         = useState(false);
 
   const PLAN_ICONS = { basic: Star, pro: Zap, ultimate: Crown };
 
@@ -129,12 +322,12 @@ export default function CaregiverSettings() {
       <div className="grid lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 flex flex-col gap-4">
           <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground ml-2">Clinical Management</h3>
-          <SettingItem icon={Users} title="Linked Patients" description="Patient list and analytics are driven by the backend caregiver cohort." onClick={() => navigate('/caregiver/home')} />
-          <SettingItem icon={Bell} title="Alert Preferences" description="Live alerts now come from patient and IoT anomaly streams." onClick={() => navigate('/caregiver/alerts')} />
+          <SettingItem icon={Users} title="Linked Patients" description="Patient list and analytics are driven by the backend caregiver cohort." onClick={() => setShowLinkedPatients(true)} />
+          <SettingItem icon={Bell} title="Alert Preferences" description="Choose which channels deliver your alerts." onClick={() => setShowAlertPrefs(true)} />
           <SettingItem icon={ShieldCheck} title="Emergency Escalation" description="Remote unlock and fill-mode commands are sent to the backend IoT queue." onClick={() => navigate('/caregiver/unlock')} />
 
           <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground ml-2 mt-4">Account & Device</h3>
-          <SettingItem icon={User} title="Profile Information" description={user?.full_name || user?.email || 'Current signed-in account'} onClick={() => document.getElementById('caregiver-profile-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />
+          <SettingItem icon={User} title="Profile Information" description={user?.full_name || user?.email || 'Current signed-in account'} onClick={() => navigate('/caregiver/profile')} />
           <SettingItem icon={Smartphone} title="Device Linkage" description={activeDevice?.device_name || 'No dispenser linked'} onClick={() => navigate('/caregiver/devices')} />
 
           <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground ml-2 mt-4">Subscription</h3>
@@ -285,7 +478,7 @@ export default function CaregiverSettings() {
         </div>
 
         <div className="flex flex-col gap-6">
-          <Card id="caregiver-profile-card" className="rounded-[2.5rem] bg-primary text-white border-none shadow-xl shadow-primary/20">
+          <Card className="rounded-[2.5rem] bg-primary text-white border-none shadow-xl shadow-primary/20">
             <CardContent className="p-8 flex flex-col items-center text-center gap-4">
               <div className="w-20 h-20 rounded-[2rem] bg-white/20 backdrop-blur-xl flex items-center justify-center text-3xl font-black">
                 {(user?.full_name || 'AS').slice(0, 2).toUpperCase()}
@@ -336,6 +529,9 @@ export default function CaregiverSettings() {
           </Card>
         </div>
       </div>
+
+      {showLinkedPatients && <LinkedPatientsModal onClose={() => setShowLinkedPatients(false)} />}
+      {showAlertPrefs && <AlertPreferencesModal onClose={() => setShowAlertPrefs(false)} />}
     </div>
   );
 }

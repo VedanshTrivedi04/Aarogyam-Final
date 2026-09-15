@@ -41,7 +41,7 @@ except ImportError:
 # ============================================================
 # CONFIGURATION
 # ============================================================
-MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
+MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.emqx.io")
 MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
 MQTT_USER = os.getenv("MQTT_USER", None)
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", None)
