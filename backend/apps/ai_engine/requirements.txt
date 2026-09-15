@@ -3,7 +3,11 @@
 # Add these to your main requirements.txt or install separately.
 #
 # Core ML
-xgboost>=2.0.0
+# xgboost pinned below 3.0 — newer releases change internal model
+# serialization in a way current shap versions can't parse, silently
+# breaking TreeExplainer (falls back to generic reasons instead of
+# per-patient SHAP explanations).
+xgboost>=2.0.0,<3.0.0
 scikit-learn>=1.3.0
 shap>=0.44.0
 

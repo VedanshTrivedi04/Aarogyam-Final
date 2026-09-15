@@ -10,8 +10,8 @@ import { Card, CardContent, CardHeader } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { useQuery } from '@tanstack/react-query';
 import { useCaregiverPatients, useCaregiverPatientDetail, useCaregiverPatientAdherence, useCaregiverPatientAlerts, useUpdateCaregiverPatient } from '@/hooks/useCaregiver';
-import { useRiskScore, useInsights, useRecommendations } from '@/hooks/useAi';
-import { RiskMeter, AIInsightsCard } from '@/components/ai';
+import { useRiskScore, useInsights, useRecommendations, useAgentActivity } from '@/hooks/useAi';
+import { RiskMeter, AIInsightsCard, AgentActivityCard } from '@/components/ai';
 import { axiosInstance } from '@/lib/axios';
 import Reports from '../patient/Reports';
 import ChatDrawer from '@/components/communications/ChatDrawer';
@@ -40,6 +40,7 @@ export default function PatientDetail() {
   const { data: riskData, isLoading: isRiskLoading } = useRiskScore(id);
   const { data: insightsData, isLoading: isInsightsLoading } = useInsights(id);
   const { data: recommendationsData, isLoading: isRecsLoading } = useRecommendations(id);
+  const { data: agentActivityData, isLoading: isAgentActivityLoading } = useAgentActivity(id);
 
   const [showChat, setShowChat] = useState(false);
   const [showCall, setShowCall] = useState(false);
@@ -218,6 +219,9 @@ export default function PatientDetail() {
             recommendations={recommendationsData}
             isLoading={isInsightsLoading || isRiskLoading || isRecsLoading}
           />
+
+          {/* AI Agent Activity — what the AI Agent has done for this patient */}
+          <AgentActivityCard activity={agentActivityData} isLoading={isAgentActivityLoading} />
 
           <Card className="rounded-[2.5rem] border-dashed border-border/60">
             <CardContent className="p-6">

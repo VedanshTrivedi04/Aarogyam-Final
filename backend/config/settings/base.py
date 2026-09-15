@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'apps.admin_panel',
     'apps.analytics',
     'apps.ai_engine',
+    'apps.agent_runtime',
     'shared',
 
     # ── Extension Apps (Phases 13–28) ────────────────────────────────
@@ -206,6 +207,13 @@ FRONTEND_URL         = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
 RAZORPAY_KEY_ID       = os.environ.get('RAZORPAY_KEY_ID', '')
 RAZORPAY_KEY_SECRET   = os.environ.get('RAZORPAY_KEY_SECRET', '')
 RAZORPAY_WEBHOOK_SECRET = os.environ.get('RAZORPAY_WEBHOOK_SECRET', '')
+
+# ─── Push Notifications (Firebase Cloud Messaging) ─────────────────────────────
+FIREBASE_CREDENTIALS_PATH = os.environ.get('FIREBASE_CREDENTIALS_PATH', '')
+
+# ─── Agent Runtime / LLM (Groq) ────────────────────────────────────────────────
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
+GROQ_MODEL   = os.environ.get('GROQ_MODEL', 'openai/gpt-oss-120b')
 
 # ─── Notification Providers ───────────────────────────────────────────────────
 TWILIO_ACCOUNT_SID  = os.environ.get('TWILIO_ACCOUNT_SID', '')

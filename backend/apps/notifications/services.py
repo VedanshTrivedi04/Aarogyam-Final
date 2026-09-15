@@ -2,6 +2,7 @@
 apps/notifications/services.py — Multi-channel notification dispatcher.
 """
 import logging
+import os
 from django.utils import timezone
 from .models import Notification, NotificationStatus
 
@@ -94,10 +95,23 @@ class NotificationDispatcher:
         from django.conf import settings
         try:
             import firebase_admin
-            from firebase_admin import messaging
-            user    = notification.user
-            tokens  = list(user.devices.filter(is_active=True).values_list('push_token', flat=True))
-            tokens  = [t for t in tokens if t]
+            from firebase_admin import credentials, messaging
+
+            if not firebase_admin._apps:
+                cred_path = getattr(settings, 'FIREBASE_CREDENTIALS_PATH', None)
+                if not cred_path or not os.path.exists(cred_path):
+                    logger.warning('Push skipped: FIREBASE_CREDENTIALS_PATH not set or file missing')
+                    return False
+                firebase_admin.initialize_app(credentials.Certificate(cred_path))
+
+            user = notification.user
+            # UserDevice (apps.identity.models), not apps.iot's Device — that's
+            # the IoT smart pillbox, unrelated to mobile push registration.
+            devices = user.push_devices.filter(is_active=True)
+            tokens = list(devices.values_list('fcm_token', flat=True)) + list(
+                devices.values_list('apns_token', flat=True)
+            )
+            tokens = [t for t in tokens if t]
             if not tokens:
                 return False
 

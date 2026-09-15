@@ -27,8 +27,8 @@ import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { GamificationWidget } from '@/components/patient/GamificationWidget';
-import { useRiskScore, useInsights, useRecommendations } from '@/hooks/useAi';
-import { RiskMeter, AIInsightsCard } from '@/components/ai';
+import { useRiskScore, useInsights, useRecommendations, useAgentActivity } from '@/hooks/useAi';
+import { RiskMeter, AIInsightsCard, AgentActivityCard } from '@/components/ai';
 import { axiosInstance } from '@/lib/axios';
 
 
@@ -309,6 +309,7 @@ export default function PatientDashboard() {
   const { data: riskData, isLoading: isRiskLoading } = useRiskScore('me');
   const { data: insightsData, isLoading: isInsightsLoading } = useInsights('me');
   const { data: recommendationsData, isLoading: isRecsLoading } = useRecommendations('me');
+  const { data: agentActivityData, isLoading: isAgentActivityLoading } = useAgentActivity('me');
   const [sosOpen, setSosOpen] = React.useState(false);
 
 
@@ -532,6 +533,9 @@ export default function PatientDashboard() {
             recommendations={recommendationsData}
             isLoading={isInsightsLoading || isRiskLoading}
           />
+
+          {/* AI Agent Activity */}
+          <AgentActivityCard activity={agentActivityData} isLoading={isAgentActivityLoading} />
 
           {/* Gamification Widget */}
           <GamificationWidget />
