@@ -4,12 +4,23 @@ import { useNavigate, Link } from 'react-router-dom';
 import {
   Users, AlertCircle, Search, Pill,
   ChevronRight, Activity, ArrowUpRight, Filter,
-  Stethoscope, Calendar, UserCircle, Loader2,
+  Stethoscope, Calendar, UserCircle, Loader2, Bot, Bell,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { useDoctorPatients, useDoctorPatientsData } from '@/hooks/useDoctor';
+import { useNotifications } from '@/hooks/useNotifications';
+
+function timeAgo(dateString) {
+  if (!dateString) return '';
+  const diffMin = Math.floor((Date.now() - new Date(dateString).getTime()) / 60000);
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  return `${Math.floor(diffHr / 24)}d ago`;
+}
 
 const AdherenceBar = ({ pct }) => {
   const safe = Number.isFinite(pct) ? pct : 0;
@@ -82,6 +93,8 @@ export default function DoctorHome() {
 
   const { data: patients = [], isLoading } = useDoctorPatients();
   const patientsData = useDoctorPatientsData(patients);
+  const { data: aiAlertsData, isLoading: isAiAlertsLoading } = useNotifications({ type: 'DOCTOR_ALERT', page_size: 5 });
+  const aiAlerts = aiAlertsData?.results || [];
 
   const enriched = useMemo(() => patients.map(p => {
     const d = patientsData[p.id] || {};
@@ -229,6 +242,52 @@ export default function DoctorHome() {
 
         {/* Side Panel */}
         <div className="flex flex-col gap-8">
+          {/* AI Agent Alerts — patients the Agentic AI flagged for doctor review */}
+          <Card className="rounded-[2.5rem] overflow-hidden border-primary/20 bg-gradient-to-br from-primary/5 via-transparent to-transparent">
+            <CardHeader className="p-8 pb-0">
+              <h3 className="text-xl font-display font-bold text-foreground flex items-center gap-3">
+                <Bot className="w-6 h-6 text-primary" /> AI Agent Alerts
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">Patients the AI Agent flagged for your review</p>
+            </CardHeader>
+            <CardContent className="p-8 flex flex-col gap-4">
+              {isAiAlertsLoading ? (
+                <div className="flex items-center justify-center py-6 text-muted-foreground gap-3">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-xs font-medium">Loading…</span>
+                </div>
+              ) : aiAlerts.length === 0 ? (
+                <p className="text-sm text-muted-foreground font-medium text-center py-4">
+                  No AI-flagged patients right now.
+                </p>
+              ) : (
+                aiAlerts.map((alert) => (
+                  <div
+                    key={alert.id}
+                    className="p-4 bg-card rounded-2xl border border-border/50 flex items-start gap-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => alert.data?.deep_link && navigate(alert.data.deep_link)}
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                      <Bell className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h5 className="font-bold text-foreground text-sm truncate">{alert.title}</h5>
+                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{alert.body}</p>
+                      <p className="text-[10px] text-muted-foreground/70 font-black uppercase tracking-widest mt-1.5">
+                        {timeAgo(alert.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
+              <Link to="/notifications">
+                <Button variant="ghost" className="w-full h-11 text-primary font-black uppercase tracking-widest text-[10px] hover:bg-primary/10">
+                  View All Alerts
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+
           {/* Critical Flags */}
           <Card className="border-destructive/30 bg-destructive/5 rounded-[2.5rem] overflow-hidden shadow-2xl shadow-destructive/5">
             <CardHeader className="p-8 pb-0">

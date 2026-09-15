@@ -111,6 +111,7 @@ export const PatientLayout = () => {
     navItems = [
       { to: '/doctor/home',     icon: LayoutDashboard, label: 'Registry Overview' },
       { to: '/doctor/critical', icon: ShieldAlert,     label: 'High Risk Flags' },
+      { to: '/notifications',   icon: Bell,            label: 'Patient Alerts' },
       { to: '/doctor/profile',  icon: UserCircle,      label: 'My Profile' },
       { to: '/doctor/settings', icon: Settings,        label: 'Clinical Profile' },
     ];

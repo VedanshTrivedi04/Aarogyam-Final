@@ -86,6 +86,9 @@ urlpatterns = [
 
     # ── AI Engine ────────────────────────────────────────────────
     path('api/v1/ai/',            include('apps.ai_engine.api', namespace='ai_engine')),
+
+    # ── Agent Runtime (Agentic AI activity feed) ──────────────────
+    path('api/v1/agent-runtime/', include('apps.agent_runtime.urls')),
 ]
 
 if settings.DEBUG:

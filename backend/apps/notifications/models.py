@@ -35,6 +35,12 @@ class NotificationType(models.TextChoices):
     WELCOME               = 'WELCOME',               'Welcome'
     ACCOUNT_SECURITY      = 'ACCOUNT_SECURITY',      'Account Security'
     GEOFENCE_EXIT         = 'GEOFENCE_EXIT',         'Geofence Exit Alert'
+    # AI Agent (apps.agent_runtime) — sent via agenthandover.NotificationAgent
+    HIGH_RISK_ALERT       = 'HIGH_RISK_ALERT',       'High Risk Alert'
+    DOCTOR_ALERT          = 'DOCTOR_ALERT',          'Doctor Review Alert'
+    AI_INSIGHT            = 'AI_INSIGHT',            'AI Insight'
+    AI_ADHERENCE_NUDGE    = 'AI_ADHERENCE_NUDGE',    'AI Adherence Nudge'
+    AI_ADHERENCE_REMINDER = 'AI_ADHERENCE_REMINDER', 'AI Adherence Reminder'
 
 
 # ─── In-App Notification (always stored regardless of channel) ────────────────

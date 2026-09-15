@@ -296,6 +296,7 @@ class AgentOrchestrator:
                 (AgentName.NOTIFICATION,  'send_patient_risk_notification'),
                 (AgentName.ADMIN,         'log_high_risk_event'),
                 (AgentName.AUDIT,         'log_risk_alert'),
+                (AgentName.AI,            'execute_intervention_goal'),
             ],
             AgentEvent.INSIGHT_GENERATED: [
                 (AgentName.NOTIFICATION,  'send_insight_notification'),
@@ -952,23 +953,67 @@ class NotificationAgent(BaseAgent):
         'premium':   ['push', 'sms', 'email', 'whatsapp', 'voice'],
     }
 
+    # Maps this agent's lowercase channel names to the real
+    # NotificationDispatcher's uppercase channel codes.
+    _REAL_CHANNEL_MAP = {
+        'push': 'PUSH', 'sms': 'SMS', 'whatsapp': 'WHATSAPP',
+        'email': 'EMAIL', 'voice': 'VOICE',
+    }
+
     def dispatch(self, payload: HandoverPayload) -> dict:
-        from apps.identity.models import User, NotificationPreferences
+        """
+        Resolve channels per this agent's own plan/preference logic, then
+        hand off to apps.notifications.services.NotificationDispatcher —
+        the actual implementation with real Firebase/SMTP/Twilio senders —
+        instead of queuing a Celery task name
+        ('notifications.tasks.send_push' etc.) that was never registered.
+        That silent mismatch meant every notification routed through this
+        agent (welcome, security, risk alerts, and now the AI Agent's
+        reminders) reported success but never actually reached anyone.
+        """
+        from apps.identity.models import NotificationPreferences, User
+        from apps.notifications.services import NotificationDispatcher
+
         user = User.objects.get(id=payload.user_id)
-        prefs = user.notification_preferences
-        plan = user.subscription.plan.slug
+        try:
+            prefs = user.notification_preferences
+        except NotificationPreferences.DoesNotExist:
+            # Not every account has this row (registration doesn't always
+            # create one) — treat as "no preferences set" rather than
+            # crashing the whole handover, matching how
+            # NotificationDispatcher._resolve_channels already treats a
+            # missing row (assume everything's enabled).
+            prefs = None
+        try:
+            plan = user.subscription.plan.slug
+        except Exception:
+            # Caregiver/doctor/etc. accounts often have no UserSubscription
+            # row at all (subscriptions are a patient-facing concept) —
+            # default to 'free' rather than crashing, matching
+            # apps.ai_engine.api.views._get_user_plan's same fallback.
+            plan = 'free'
 
         channels = self._resolve_channels(user, prefs, plan, payload.data)
-        sent_to = []
-        for channel in channels:
-            task_path = self.CHANNEL_TASK_MAP[channel]
-            from celery import current_app
-            current_app.send_task(task_path, kwargs={
-                'user_id': str(user.id),
-                'payload': payload.data,
-            })
-            sent_to.append(channel)
-        return {'channels': sent_to}
+        real_channels = [self._REAL_CHANNEL_MAP[c] for c in channels if c in self._REAL_CHANNEL_MAP]
+        title, body = self._build_title_body(payload.data)
+
+        # NotificationDispatcher.dispatch() only auto-adds its always-on
+        # IN_APP channel when `channels` is left unset (it then runs its own
+        # resolution, which starts from ['IN_APP']). Passing this agent's
+        # explicit channel list bypasses that, so IN_APP is added here too —
+        # it has no external dependency and should never be the channel that
+        # silently fails to appear.
+        real_channels = ['IN_APP'] + real_channels
+
+        NotificationDispatcher.dispatch(
+            user=user,
+            notification_type=payload.data.get('type', 'GENERAL'),
+            title=title,
+            body=body,
+            data=payload.data,
+            channels=real_channels,
+        )
+        return {'channels': channels}
 
     # Notification Agent also responds to broadcast events
     def send_welcome_notification(self, payload: HandoverPayload) -> dict:
@@ -1034,20 +1079,70 @@ class NotificationAgent(BaseAgent):
         payload.data['force_channel'] = 'email'
         return self.dispatch(payload)
 
+    def send_doctor_alert(self, payload: HandoverPayload) -> dict:
+        """
+        Registered as the DOCTOR_ALERT_TRIGGERED handler (see
+        medadhere_extensions_handover.register_extension_events) but was
+        never implemented, so doctor alerts silently no-op'd (handover()
+        catches the resulting AttributeError). Added to close that gap —
+        same wrapper pattern as every other send_* method here.
+        """
+        payload.data['type'] = 'DOCTOR_ALERT'
+        return self.dispatch(payload)
+
+    @staticmethod
+    def _build_title_body(data: dict) -> tuple[str, str]:
+        """
+        Derive a human-readable (title, body) from a notification payload's
+        `data` dict. Central place so every send_* wrapper above (and any
+        future one) gets real, readable notification text instead of raw
+        JSON, no matter which channel it ends up delivered on.
+        """
+        ntype = data.get('type', 'GENERAL')
+
+        if ntype == 'WELCOME':
+            return 'Welcome to Aarogyam!', "We're glad to have you onboard — let's get your medications on track."
+        if ntype == 'ORDER_CONFIRMATION':
+            return 'Order Confirmed', 'Your hardware order has been placed and is being processed.'
+        if ntype == 'DEVICE_LINKED':
+            return 'Device Linked', f"{data.get('device_name', 'Your device')} is now linked to your account."
+        if ntype == 'DEVICE_LOW_BATTERY':
+            return 'Low Battery Alert', f"{data.get('device_name', 'Your device')} battery is at {data.get('battery_level', 'low')}%."
+        if ntype == 'SECURITY_ALERT':
+            return 'Security Alert', "Your account password was recently changed. If this wasn't you, contact support immediately."
+        if ntype == 'HIGH_RISK_ALERT':
+            reasons = data.get('reasons') or []
+            reason_text = '; '.join(reasons[:2]) if reasons else 'Adherence risk has increased.'
+            return f"Adherence Risk Alert ({data.get('risk_level', 'high')})", reason_text
+        if ntype == 'AI_INSIGHT':
+            return 'New AI Insight', str(data.get('pattern', 'Check the app for a new adherence insight.'))
+        if ntype == 'SYSTEM_ALERT':
+            return 'System Alert', data.get('message', 'Please check the app for details.')
+        if ntype == 'DOCTOR_ALERT':
+            return f"Patient Risk Alert ({data.get('risk_level', 'HIGH')})", 'A linked patient needs adherence review. Open the app for details.'
+        if ntype == 'AI_ADHERENCE_NUDGE':
+            return 'Medication Reminder', data.get('message') or 'A gentle reminder to take your medication.'
+        if ntype == 'AI_ADHERENCE_REMINDER':
+            return 'Medication Reminder', "Please remember to take your medication — you're at risk of missing a dose."
+
+        return ntype.replace('_', ' ').title(), 'Please check the app for details.'
+
     def _resolve_channels(self, user, prefs, plan: str, data: dict) -> list[str]:
         if data.get('force_channel'):
             return [data['force_channel']]
         allowed = set(self.PLAN_CHANNELS.get(plan, ['push']))
         preferred = []
-        if prefs.push_enabled and 'push' in allowed:
+        # prefs may be None (no NotificationPreferences row for this user) —
+        # treat that as "no preference set" rather than "opted out of everything".
+        if (prefs is None or prefs.push_enabled) and 'push' in allowed:
             preferred.append('push')
-        if prefs.sms_enabled and 'sms' in allowed:
+        if (prefs is None or prefs.sms_enabled) and 'sms' in allowed:
             preferred.append('sms')
-        if prefs.email_enabled and 'email' in allowed:
+        if (prefs is None or prefs.email_enabled) and 'email' in allowed:
             preferred.append('email')
-        if prefs.whatsapp_enabled and 'whatsapp' in allowed:
+        if (prefs is None or getattr(prefs, 'whatsapp_enabled', False)) and 'whatsapp' in allowed:
             preferred.append('whatsapp')
-        if prefs.voice_call_enabled and 'voice' in allowed:
+        if (prefs is None or prefs.voice_call_enabled) and 'voice' in allowed:
             preferred.append('voice')
         return preferred or ['push']
 
@@ -1245,6 +1340,25 @@ class AIAgent(BaseAgent):
         from apps.clinical.models import Prescription
         score = Prescription.objects.filter(patient_id=payload.patient_id, status='active').count()
         return {'complexity_score': score}
+
+    def execute_intervention_goal(self, payload: HandoverPayload) -> dict:
+        """
+        Handler for HIGH_RISK_DETECTED — the entry point for the agentic
+        (Phase 2) adherence-intervention behavior. Deliberately a thin
+        enqueue, not inline reasoning: the LLM call this eventually triggers
+        has real latency/failure modes that shouldn't block the synchronous
+        broadcast() loop every other HIGH_RISK_DETECTED handler runs in.
+        The actual observe->reason->plan->act->evaluate loop lives in
+        apps.agent_runtime (see apps/agent_runtime/services/pipeline.py).
+        """
+        try:
+            from apps.agent_runtime.tasks import evaluate_intervention_needed
+            evaluate_intervention_needed.delay(payload.patient_id, trace_id=payload.trace_id)
+            return {'queued': True}
+        except ImportError:
+            # agent_runtime not installed/available — normal in standalone/test mode
+            self.log('warning', 'agent_runtime not available — intervention not queued', payload)
+            return {'queued': False, 'reason': 'agent_runtime_unavailable'}
 
 
 # ═══════════════════════════════════════════════════════════════════

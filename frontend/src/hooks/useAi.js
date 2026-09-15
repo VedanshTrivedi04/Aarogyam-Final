@@ -29,3 +29,12 @@ export const useRecommendations = (patientId = 'me') => {
   });
 };
 
+export const useAgentActivity = (patientId = 'me') => {
+  return useQuery({
+    queryKey: qk.ai.agentActivity(patientId),
+    queryFn: () => aiAgent.getAgentActivity(patientId),
+    staleTime: STALE.AGENT_ACTIVITY,
+    enabled: Boolean(patientId),
+  });
+};
+

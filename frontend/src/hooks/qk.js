@@ -3,6 +3,7 @@ export const STALE = {
   ADHERENCE_RATE:    60  * 1000,        // 1 minute
   RISK_SCORE:        2   * 60 * 1000,   // 2 minutes
   AI_INSIGHTS:       5   * 60 * 1000,   // 5 minutes
+  AGENT_ACTIVITY:    5   * 60 * 1000,   // 5 minutes
   SUBSCRIPTION:      10  * 60 * 1000,   // 10 minutes
   USER_PROFILE:      15  * 60 * 1000,   // 15 minutes
   CAREGIVER_ALERTS:  15  * 60 * 1000,   // 15 minutes
@@ -49,6 +50,7 @@ export const qk = {
     insights:   (pid)     => ['ai', 'insights', pid ?? 'me'],
     patterns:   (pid)     => ['ai', 'patterns', pid ?? 'me'],
     rateInsight:(pid)     => ['ai', 'rate-insight', pid ?? 'me'],
+    agentActivity: (pid)  => ['ai', 'agent-activity', pid ?? 'me'],
   },
 
   // IoT

@@ -15,6 +15,10 @@ class AiAgent extends AgentBase {
   async getRecommendations(patientId = 'me') {
     return this._get(api.get(`${AI_BASE}/recommendations/${patientId}/`));
   }
+
+  async getAgentActivity(patientId = 'me') {
+    return this._get(api.get(`/agent-runtime/activity/${patientId}/`));
+  }
 }
 
 export const aiAgent = new AiAgent();

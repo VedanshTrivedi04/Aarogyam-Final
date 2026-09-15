@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/Badge';
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead } from '@/hooks/useNotifications';
 
 const getCategory = (type) => {
-  if (['DOSE_MISSED', 'MISSED_DOSE_ALERT', 'CAREGIVER_ALERT', 'ANOMALY_ALERT'].includes(type)) return 'critical';
+  if (['DOSE_MISSED', 'MISSED_DOSE_ALERT', 'CAREGIVER_ALERT', 'ANOMALY_ALERT', 'DOCTOR_ALERT'].includes(type)) return 'critical';
   if (['REFILL_ALERT', 'PRESCRIPTION_EXPIRY', 'SUBSCRIPTION_EXPIRY'].includes(type)) return 'warning';
   return 'info';
 };

@@ -1213,7 +1213,10 @@ class DoctorAgent(BaseAgent):
                     'risk_level'   : risk_level,
                     'patient_name' : payload.data.get('patient_name'),
                     'missed_doses' : payload.data.get('missed_doses'),
-                    'deep_link'    : f'/doctor/patients/{payload.patient_id}/adherence/',
+                    # Matches the real frontend route (frontend/src/routes/index.jsx:
+                    # DoctorPatientDetail at '/doctor/patient/:id') — the previous
+                    # '/doctor/patients/<id>/adherence/' path didn't exist.
+                    'deep_link'    : f'/doctor/patient/{payload.patient_id}',
                 },
                 trace_id = payload.trace_id,
             )
