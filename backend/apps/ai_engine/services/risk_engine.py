@@ -189,7 +189,7 @@ def _compute_and_store(patient_id: str) -> dict:
     """
     Full inference pipeline: fetch data → engineer features → infer → store → return.
     """
-    events_df, prescriptions_data, patient_data = _fetch_patient_data(patient_id)
+    events_df, prescriptions_data, patient_data, as_of = _fetch_patient_data(patient_id)
 
     from apps.ai_engine.services.inference import InferenceService
     svc = InferenceService.get_instance()
@@ -199,6 +199,7 @@ def _compute_and_store(patient_id: str) -> dict:
         events_df=events_df,
         prescriptions_data=prescriptions_data,
         patient_data=patient_data,
+        as_of=as_of,
     )
 
     _persist_score(result)
@@ -209,7 +210,7 @@ def _compute_and_store(patient_id: str) -> dict:
 def _fetch_patient_data(patient_id: str):
     """
     Fetch adherence events + prescriptions + patient profile from DB.
-    Returns (events_df, prescriptions_data, patient_data).
+    Returns (events_df, prescriptions_data, patient_data, as_of).
     All failures return safe empty defaults.
     """
     import pandas as pd
@@ -217,14 +218,30 @@ def _fetch_patient_data(patient_id: str):
     events_df = pd.DataFrame()
     prescriptions_data = []
     patient_data = {}
+    as_of = datetime.now(timezone.utc)
 
     try:
         # ReminderJob + DoseLog — last 90 days
         from apps.scheduling.models import ReminderJob
-        from django.utils import timezone
+        from django.utils import timezone as dj_timezone
         from django.db.models import F
 
-        cutoff = timezone.now() - timedelta(days=90)
+        # Anchor the 90-day lookback to the patient's own most recent event,
+        # not wall-clock now() — otherwise a patient whose entire history
+        # predates the last 90 days (e.g. older demo/seed data) gets zero
+        # events fetched before adaptive as_of below ever gets a chance to
+        # run, and looks indistinguishable from a brand-new patient.
+        latest_event = (
+            ReminderJob.objects.filter(
+                schedule__prescription__patient_id=patient_id,
+                deleted_at__isnull=True,
+            )
+            .order_by("-scheduled_at")
+            .values_list("scheduled_at", flat=True)
+            .first()
+        )
+        fetch_anchor = min(dj_timezone.now(), latest_event) if latest_event else dj_timezone.now()
+        cutoff = fetch_anchor - timedelta(days=90)
         qs = ReminderJob.objects.filter(
             schedule__prescription__patient_id=patient_id,
             scheduled_at__gte=cutoff,
@@ -244,19 +261,28 @@ def _fetch_patient_data(patient_id: str):
         if qs.exists():
             events_df = pd.DataFrame(list(qs))
             events_df.rename(columns={"id": "event_id"}, inplace=True)
-            
+
             # Compute delay_minutes in pandas
             events_df["scheduled_at"] = pd.to_datetime(events_df["scheduled_at"], utc=True)
             events_df["taken_at"] = pd.to_datetime(events_df["taken_at"], utc=True)
             events_df["delay_minutes"] = (events_df["taken_at"] - events_df["scheduled_at"]).dt.total_seconds() / 60.0
-            
+
+            # Adaptive as-of: if this patient has no events within the last 7
+            # days (e.g. demo/historical data), anchor rolling windows to the
+            # most recent scheduled event instead of wall-clock now(), so the
+            # 7d/30d windows aren't silently empty for every patient.
+            most_recent = events_df["scheduled_at"].max()
+            recent_cutoff = as_of - timedelta(days=7)
+            if pd.notna(most_recent) and most_recent < recent_cutoff:
+                as_of = most_recent.to_pydatetime()
+
     except Exception as e:
         logger.warning(f"Could not fetch adherence events for {patient_id}: {e}")
 
     try:
         from apps.clinical.models import Prescription
         presc_qs = Prescription.objects.filter(
-            patient_id=patient_id, status="active"
+            patient_id=patient_id, is_active=True, deleted_at__isnull=True
         ).select_related("medication")
         for p in presc_qs:
             prescriptions_data.append(
@@ -264,8 +290,8 @@ def _fetch_patient_data(patient_id: str):
                     "prescription_id": str(p.id),
                     "medication_name": p.medication.name,
                     "drug_class": getattr(p.medication, "drug_class", ""),
-                    "doses_per_day": p.total_daily_doses or 1,
-                    "is_critical": p.is_critical,
+                    "doses_per_day": p.schedules.count() or 1,
+                    "is_critical": False,
                 }
             )
     except Exception as e:
@@ -275,13 +301,13 @@ def _fetch_patient_data(patient_id: str):
         from apps.clinical.models import Patient
         p = Patient.objects.get(id=patient_id)
         patient_data = {
-            "age": _calculate_age(p.date_of_birth) if hasattr(p, "date_of_birth") else 45,
-            "cognitive_impairment": getattr(p, "cognitive_status", "normal") not in ("normal",),
+            "age": _calculate_age(p.date_of_birth),
+            "cognitive_impairment": getattr(p, "cognitive_status", "NORMAL") not in ("NORMAL",),
         }
     except Exception as e:
         logger.warning(f"Could not fetch patient profile for {patient_id}: {e}")
 
-    return events_df, prescriptions_data, patient_data
+    return events_df, prescriptions_data, patient_data, as_of
 
 
 def _persist_score(result) -> None:
@@ -350,6 +376,7 @@ def _get_quick_stats(patient_id: str):
 
 
 def _calculate_age(date_of_birth) -> int:
+    if not date_of_birth:
+        return 45
     today = datetime.now(timezone.utc).date()
-    dob = date_of_birth
-    return (today - dob).days // 365
+    return (today - date_of_birth).days // 365

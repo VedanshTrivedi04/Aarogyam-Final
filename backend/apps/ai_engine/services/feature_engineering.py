@@ -42,7 +42,11 @@ FEATURE_DEFAULTS: Dict[str, Any] = {
     # Streak
     "current_streak_days": 0,
     "max_streak_30d": 0,
-    "days_since_last_miss": 999,
+    # Capped to the 90-day lookback window (not an arbitrary large sentinel
+    # like 999) — a value trees never see in training is out-of-distribution
+    # and extrapolates unpredictably, which is how a genuinely zero-miss
+    # patient could end up with a wildly wrong (high) risk prediction.
+    "days_since_last_miss": 90,
     # Regimen complexity
     "medication_count": 1,
     "doses_per_day": 1,
@@ -147,6 +151,13 @@ def compute_miss_counts(
 
 def compute_timing_features(events: pd.DataFrame) -> Dict[str, float]:
     """Compute delay statistics from taken doses."""
+    if events.empty or "status" not in events.columns or "delay_minutes" not in events.columns:
+        return {
+            "avg_delay_minutes": FEATURE_DEFAULTS["avg_delay_minutes"],
+            "max_delay_minutes": FEATURE_DEFAULTS["max_delay_minutes"],
+            "pct_on_time_7d": FEATURE_DEFAULTS["pct_on_time_7d"],
+        }
+
     taken = events[
         events["status"].isin({"TAKEN", "TAKEN_LATE", "TAKEN_EARLY"})
         & events["delay_minutes"].notna()
@@ -185,7 +196,7 @@ def compute_streak_features(
         return {
             "current_streak_days": 0,
             "max_streak_30d": 0,
-            "days_since_last_miss": 999,
+            "days_since_last_miss": FEATURE_DEFAULTS["days_since_last_miss"],
             "consecutive_miss_streak": 0,
         }
 
@@ -196,7 +207,12 @@ def compute_streak_features(
     # days_since_last_miss
     missed = events[events["status"] == "MISSED"]
     if missed.empty:
-        days_since_last_miss = 999
+        # No miss anywhere in the observed history — report how much clean
+        # history we actually have (capped to the lookback window) rather
+        # than an arbitrary sentinel that never occurs in training data.
+        earliest = pd.to_datetime(events["scheduled_at"]).min()
+        observed_days = max(0, (as_of - earliest).days)
+        days_since_last_miss = min(observed_days, FEATURE_DEFAULTS["days_since_last_miss"])
     else:
         last_miss_date = pd.to_datetime(missed["scheduled_at"]).max()
         days_since_last_miss = max(0, (as_of - last_miss_date).days)
@@ -364,10 +380,17 @@ def build_feature_vector(
 
     features = dict(FEATURE_DEFAULTS)
 
-    # Ensure scheduled_at is datetime
+    # Ensure scheduled_at is datetime, and drop not-yet-due events (future
+    # PENDING reminder jobs) — they haven't happened yet so counting them as
+    # "not taken" would artificially deflate adherence for every patient with
+    # upcoming scheduled doses.
     if not events_df.empty and "scheduled_at" in events_df.columns:
         events_df = events_df.copy()
         events_df["scheduled_at"] = pd.to_datetime(events_df["scheduled_at"], utc=True)
+        as_of_ts = pd.Timestamp(as_of)
+        if as_of_ts.tzinfo is None:
+            as_of_ts = as_of_ts.tz_localize("UTC")
+        events_df = events_df[events_df["scheduled_at"] <= as_of_ts]
 
     # Data quality: fewer events = less reliable features
     data_quality = min(1.0, len(events_df) / 30.0) if not events_df.empty else 0.0
@@ -429,18 +452,39 @@ def build_feature_vector(
     )
 
 
-def build_training_features(adherence_df: pd.DataFrame) -> pd.DataFrame:
+def build_training_features(adherence_df: pd.DataFrame, holdout_days: int = 14) -> pd.DataFrame:
     """
     Build feature matrix from full adherence DataFrame (for training).
     Groups by patient_id and computes features per patient.
     Returns DataFrame with one row per patient.
+
+    Labels come from a held-out FUTURE window, not from the feature window
+    itself. Deriving the label directly from a thresholded feature (e.g.
+    "adherence_rate_7d < 0.80") makes the label a deterministic function of
+    one of the model's own inputs — the model then trivially learns that one
+    threshold and outputs a near-constant probability on either side of it
+    instead of a real risk gradient (this is how the model ended up
+    predicting ~the same score for almost everyone). Holding out the last
+    `holdout_days` of each patient's history and predicting *that* from
+    everything before it turns this into a genuine forecasting task.
     """
     results = []
     patient_ids = adherence_df["patient_id"].unique()
     logger.info(f"Building features for {len(patient_ids):,} patients...")
+    taken_statuses = {"TAKEN", "TAKEN_LATE", "TAKEN_EARLY"}
+    skipped_patients = 0
 
     for pid in patient_ids:
         patient_events = adherence_df[adherence_df["patient_id"] == pid].copy()
+        patient_events["scheduled_at"] = pd.to_datetime(patient_events["scheduled_at"], utc=True)
+
+        cutoff = patient_events["scheduled_at"].max() - timedelta(days=holdout_days)
+        history = patient_events[patient_events["scheduled_at"] <= cutoff]
+        future = patient_events[patient_events["scheduled_at"] > cutoff]
+
+        if history.empty or future.empty:
+            skipped_patients += 1
+            continue
 
         # Get patient context from first row
         first_row = patient_events.iloc[0]
@@ -451,14 +495,18 @@ def build_training_features(adherence_df: pd.DataFrame) -> pd.DataFrame:
 
         fv = build_feature_vector(
             patient_id=pid,
-            events_df=patient_events,
+            events_df=history,
             patient_data=patient_data,
+            as_of=cutoff.to_pydatetime(),
         )
 
+        future_adherence = float(future["status"].isin(taken_statuses).mean())
         row = fv.to_dict()
-        # Label: non-adherent if 7-day rate < 0.80
-        row["label"] = int(fv.features["adherence_rate_7d"] < 0.80)
+        row["label"] = int(future_adherence < 0.80)
         results.append(row)
+
+    if skipped_patients:
+        logger.info(f"Skipped {skipped_patients} patients with insufficient history/future split")
 
     df = pd.DataFrame(results)
     logger.info(

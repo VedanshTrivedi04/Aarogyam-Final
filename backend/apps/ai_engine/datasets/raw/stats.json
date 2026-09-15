@@ -1,7 +1,7 @@
 {
-  "n_patients": 500,
-  "n_prescriptions": 1251,
-  "n_events": 57420,
-  "overall_adherence_rate": 31.05,
-  "miss_rate": 61.19
+  "n_patients": 800,
+  "n_prescriptions": 1982,
+  "n_events": 276030,
+  "overall_adherence_rate": 37.12,
+  "miss_rate": 53.57
 }

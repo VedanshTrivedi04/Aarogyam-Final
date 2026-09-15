@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { queryClient } from '@/lib/queryClient';
 
 export const useAuthStore = create(
   persist(
@@ -26,6 +27,10 @@ export const useAuthStore = create(
         // Keep isInitialized:true so ProtectedRoute immediately redirects to /login
         // instead of showing a loading spinner before redirecting
         set({ accessToken: null, refreshToken: null, user: null, isInitialized: true });
+        // Wipe cached React Query data (risk scores, insights, etc.) so the
+        // next login — possibly a different patient in the same tab — never
+        // sees a stale, cross-account cached result before its own fetch lands.
+        queryClient.clear();
       },
 
       isAuthenticated: () => {

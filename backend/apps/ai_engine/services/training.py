@@ -94,6 +94,42 @@ def _load_or_generate_data(data_dir: str) -> pd.DataFrame:
     return df
 
 
+def _rebalance_classes(feature_df: pd.DataFrame, max_majority_ratio: float = 3.0) -> pd.DataFrame:
+    """
+    Downsample the majority label down to `max_majority_ratio` times the
+    minority count.
+
+    Real adherence data (and this synthetic generator) skews heavily toward
+    non-adherent patients, so the "adherent" class is a thin minority. Fixing
+    that purely via XGBoost's scale_pos_weight distorts predict_proba away
+    from true likelihoods at extreme ratios (it shifts the loss gradient, not
+    the learned probability surface) — undersampling the majority class keeps
+    the training distribution closer to natural and gives much better
+    calibrated probabilities across the full risk spectrum.
+    """
+    counts = feature_df["label"].value_counts()
+    if len(counts) < 2:
+        return feature_df
+
+    minority_label = counts.idxmin()
+    majority_label = counts.idxmax()
+    minority_count = int(counts[minority_label])
+    majority_cap = int(minority_count * max_majority_ratio)
+
+    majority_rows = feature_df[feature_df["label"] == majority_label]
+    minority_rows = feature_df[feature_df["label"] == minority_label]
+
+    if len(majority_rows) > majority_cap:
+        majority_rows = majority_rows.sample(n=majority_cap, random_state=42)
+
+    balanced = pd.concat([majority_rows, minority_rows]).sample(frac=1, random_state=42)
+    logger.info(
+        f"Rebalanced classes: {len(minority_rows)} minority / {len(majority_rows)} majority "
+        f"(was {counts[majority_label]} majority)"
+    )
+    return balanced.reset_index(drop=True)
+
+
 def _prepare_train_test_split(
     feature_df: pd.DataFrame, config: TrainingConfig
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
@@ -163,17 +199,24 @@ def train_model(
 
     logger.info(f"Training set: {len(feature_df):,} patients, {feature_df['label'].mean():.1%} non-adherent")
 
+    # Undersample the (heavily dominant) non-adherent class so the model
+    # trains on a naturally balanced distribution — see _rebalance_classes.
+    feature_df = _rebalance_classes(feature_df)
+    logger.info(f"Balanced set: {len(feature_df):,} patients, {feature_df['label'].mean():.1%} non-adherent")
+
     # 3. Split
     X_train, X_test, y_train, y_test = _prepare_train_test_split(feature_df, config)
 
-    # 4. Train
+    # 4. Train — scale_pos_weight left near 1.0 since class balance is now
+    # handled by resampling above, not loss reweighting (which distorts
+    # predict_proba away from true likelihoods at extreme ratios).
     model = xgb.XGBClassifier(
         n_estimators=config.n_estimators,
         max_depth=config.max_depth,
         learning_rate=config.learning_rate,
         subsample=config.subsample,
         colsample_bytree=config.colsample_bytree,
-        scale_pos_weight=config.scale_pos_weight,
+        scale_pos_weight=1.0,
         random_state=config.random_state,
         eval_metric=config.eval_metric,
         early_stopping_rounds=config.early_stopping_rounds,

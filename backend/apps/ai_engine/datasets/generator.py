@@ -55,12 +55,20 @@ ARCHETYPES = {
         "cognitive_impairment_prob": 0.15,
     },
     "middle_aged_chronic": {
-        "weight": 0.30,
+        "weight": 0.15,
         "base_adherence": 0.78,
         "condition_count_range": (1, 3),
         "meds_per_day_range": (1, 4),
         "age_range": (40, 65),
         "cognitive_impairment_prob": 0.02,
+    },
+    "highly_adherent": {
+        "weight": 0.15,
+        "base_adherence": 0.96,
+        "condition_count_range": (1, 2),
+        "meds_per_day_range": (1, 2),
+        "age_range": (25, 60),
+        "cognitive_impairment_prob": 0.00,
     },
     "young_acute": {
         "weight": 0.20,
@@ -165,33 +173,41 @@ def _compute_adherence_probability(
     """
     p = patient.base_adherence
 
-    # Cognitive impairment penalty
+    # Cognitive impairment penalty — stable per-patient trait, applied directly
     if patient.cognitive_impairment:
         p -= 0.20
 
+    # Situational penalties (complexity, timing, side effects, fatigue) stack
+    # per-dose and can otherwise erase 0.5+ of probability, dragging the whole
+    # population's realized adherence far below each archetype's intended
+    # base_adherence. Cap their combined effect so the population stays
+    # anchored near the archetypes' intended spread instead of collapsing
+    # almost everyone into "non-adherent".
+    situational_penalty = 0.0
+
     # Medication complexity penalty (more meds → lower per-med adherence)
-    complexity_penalty = (patient.medication_count - 1) * 0.03
-    p -= min(complexity_penalty, 0.18)
+    situational_penalty += min((patient.medication_count - 1) * 0.015, 0.10)
 
     # Weekend effect
     if dt.weekday() >= 5:
-        p -= 0.10
+        situational_penalty += 0.05
 
     # Time-of-day penalties
     hour = dt.hour
     if hour >= 21:
-        p -= 0.18  # late night doses often skipped
+        situational_penalty += 0.08  # late night doses often skipped
     elif hour >= 18:
-        p -= 0.08  # evening slightly worse
+        situational_penalty += 0.04  # evening slightly worse
     elif hour <= 7:
-        p -= 0.05  # very early morning
+        situational_penalty += 0.02  # very early morning
 
     # Side effect skip probability
-    p -= prescription.side_effect_skip_prob
+    situational_penalty += prescription.side_effect_skip_prob
 
     # Temporal fatigue — adherence degrades slightly over long treatments
-    fatigue_factor = min(day_index / 90 * 0.12, 0.12)
-    p -= fatigue_factor
+    situational_penalty += min(day_index / 90 * 0.08, 0.08)
+
+    p -= min(situational_penalty, 0.25)
 
     # Streak boost — if last 3 days were all taken, small boost
     # (simplified approximation here)
