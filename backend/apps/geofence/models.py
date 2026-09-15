@@ -2,8 +2,16 @@
 from django.db import models
 from shared.models import BaseModel
 
-ZONE_TYPES = [('HOME', 'Home'), ('WORK', 'Work'), ('GYM', 'Gym'), ('CUSTOM', 'Custom')]
+ZONE_TYPES  = [('HOME', 'Home'), ('WORK', 'Work'), ('GYM', 'Gym'), ('CUSTOM', 'Custom')]
+SHAPE_TYPES = [('CIRCLE', 'Circle'), ('POLYGON', 'Custom Shape')]
 GEO_EVENT_TYPES = [('EXIT', 'Zone Exit'), ('ENTRY', 'Zone Entry')]
+
+# Zones are small, walking-distance safe areas: no minimum size, capped at 100m
+# from the anchor/center point (whether measured as a circle radius or as the
+# distance of each custom-shape point from the anchor).
+MAX_ZONE_RADIUS_METERS = 100
+MIN_ZONE_RADIUS_METERS = 1
+MAX_POLYGON_POINTS = 8
 
 
 class GeofenceZone(BaseModel):
@@ -14,9 +22,13 @@ class GeofenceZone(BaseModel):
     label            = models.CharField(max_length=100)
     address          = models.CharField(max_length=500, blank=True)  # reverse-geocoded via Google Maps
     zone_type        = models.CharField(max_length=10, choices=ZONE_TYPES, default='CUSTOM')
+    shape_type       = models.CharField(max_length=10, choices=SHAPE_TYPES, default='CIRCLE')
     latitude         = models.DecimalField(max_digits=10, decimal_places=7)
     longitude        = models.DecimalField(max_digits=10, decimal_places=7)
-    radius_meters    = models.PositiveIntegerField(default=200)
+    radius_meters    = models.PositiveIntegerField(default=100)
+    # For shape_type=POLYGON: up to 8 [lat, lng] vertices, each within
+    # MAX_ZONE_RADIUS_METERS of (latitude, longitude). Null/empty for circles.
+    points           = models.JSONField(default=list, blank=True)
     is_active        = models.BooleanField(default=True)
     # Alert when patient exits with pending doses
     alert_on_exit_with_pending_dose = models.BooleanField(default=True)
@@ -26,6 +38,8 @@ class GeofenceZone(BaseModel):
         indexes  = [models.Index(fields=['patient', 'is_active'])]
 
     def __str__(self):
+        if self.shape_type == 'POLYGON':
+            return f'{self.label} (custom shape, {len(self.points)} pts)'
         return f'{self.label} ({self.zone_type}) r={self.radius_meters}m'
 
 

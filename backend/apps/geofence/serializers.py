@@ -8,8 +8,8 @@ class GeofenceZoneSerializer(serializers.ModelSerializer):
     class Meta:
         model  = GeofenceZone
         fields = [
-            'id', 'label', 'address', 'zone_type',
-            'latitude', 'longitude', 'radius_meters',
+            'id', 'label', 'address', 'zone_type', 'shape_type',
+            'latitude', 'longitude', 'radius_meters', 'points',
             'is_active', 'alert_on_exit_with_pending_dose',
             'caregiver_name', 'created_at',
         ]
@@ -22,12 +22,13 @@ class GeofenceZoneSerializer(serializers.ModelSerializer):
 
 
 class GeofenceEventSerializer(serializers.ModelSerializer):
-    zone_label = serializers.CharField(source='zone.label', read_only=True)
+    zone_label   = serializers.CharField(source='zone.label', read_only=True)
+    patient_name = serializers.CharField(source='patient.user.full_name', read_only=True)
 
     class Meta:
         model  = GeofenceEvent
         fields = [
-            'id', 'event_type', 'zone_label',
+            'id', 'event_type', 'zone_label', 'patient_name',
             'patient_lat', 'patient_lng',
             'pending_meds', 'alert_sent', 'call_placed',
             'triggered_at',

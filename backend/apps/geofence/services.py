@@ -52,13 +52,40 @@ def validate_coordinates(lat: float, lng: float) -> bool:
     return -90 <= lat <= 90 and -180 <= lng <= 180
 
 
+def offset_meters(lat: float, lng: float, dx_m: float, dy_m: float) -> tuple[float, float]:
+    """Approximate a lat/lng point offset by dx_m (east) / dy_m (north) meters."""
+    R = 6_371_000
+    d_lat = (dy_m / R) * (180 / math.pi)
+    d_lng = (dx_m / (R * math.cos(math.pi * lat / 180))) * (180 / math.pi)
+    return lat + d_lat, lng + d_lng
+
+
+def point_in_polygon(lat: float, lng: float, points: list) -> bool:
+    """
+    Ray-casting point-in-polygon test. `points` is a list of [lat, lng] pairs.
+    Treats lng as x and lat as y — fine at the small (<=100m) scale these zones use.
+    """
+    if len(points) < 3:
+        return False
+    inside = False
+    x, y = lng, lat
+    x1, y1 = points[-1][1], points[-1][0]
+    for point in points:
+        x2, y2 = point[1], point[0]
+        if ((y1 > y) != (y2 > y)) and (x < (x2 - x1) * (y - y1) / (y2 - y1 + 1e-12) + x1):
+            inside = not inside
+        x1, y1 = x2, y2
+    return inside
+
+
 # ─── GeofenceService ──────────────────────────────────────────────────────────
 
 class GeofenceService:
 
     @staticmethod
     def create_zone(patient, caregiver, lat: float, lng: float, radius: int,
-                    label: str, zone_type: str = 'CUSTOM') -> GeofenceZone:
+                    label: str, zone_type: str = 'CUSTOM',
+                    shape_type: str = 'CIRCLE', points: list | None = None) -> GeofenceZone:
         """
         Create a geofence zone for a patient, optionally set by a caregiver.
         Auto-populates the address via Google Maps reverse geocoding.
@@ -70,15 +97,17 @@ class GeofenceService:
             label=label,
             address=address,
             zone_type=zone_type,
+            shape_type=shape_type,
             latitude=lat,
             longitude=lng,
             radius_meters=radius,
+            points=points or [],
             is_active=True,
             alert_on_exit_with_pending_dose=True,
         )
         logger.info(
             f'GeofenceZone created: id={zone.id} patient={patient.patient_code} '
-            f'label={label} radius={radius}m address="{address}"'
+            f'label={label} shape={shape_type} radius={radius}m address="{address}"'
         )
         return zone
 
@@ -127,8 +156,11 @@ class GeofenceService:
         alerts  = []
 
         for zone in zones:
-            distance  = haversine_distance(lat, lng, float(zone.latitude), float(zone.longitude))
-            is_inside = distance <= zone.radius_meters
+            distance = haversine_distance(lat, lng, float(zone.latitude), float(zone.longitude))
+            if zone.shape_type == 'POLYGON' and zone.points:
+                is_inside = point_in_polygon(lat, lng, zone.points)
+            else:
+                is_inside = distance <= zone.radius_meters
 
             # Determine previous state from most-recent event
             last_event = (

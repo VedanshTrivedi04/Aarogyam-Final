@@ -4,8 +4,8 @@ import { axiosInstance as api } from '@/lib/axios';
 const BASE = '/geofence';
 
 class GeofenceAgent extends AgentBase {
-  async getZones() {
-    return this._get(api.get(`${BASE}/zones/`));
+  async getZones(patientId) {
+    return this._get(api.get(`${BASE}/zones/`, { params: { patient_id: patientId } }));
   }
 
   async createZone(data) {
@@ -13,7 +13,7 @@ class GeofenceAgent extends AgentBase {
   }
 
   async updateZone(id, data) {
-    return this._patch(api.patch(`${BASE}/zones/${id}/`, data));
+    return this._put(api.put(`${BASE}/zones/${id}/`, data));
   }
 
   async deleteZone(id) {
@@ -21,7 +21,7 @@ class GeofenceAgent extends AgentBase {
   }
 
   async getEvents(params = {}) {
-    return this._get(api.get(`${BASE}/event/`, { params }));
+    return this._get(api.get(`${BASE}/zones/events/`, { params }));
   }
 }
 

@@ -2,6 +2,7 @@ from django.urls import path
 from .views import (
     CaregiverZoneListCreateView,
     CaregiverZoneDetailView,
+    CaregiverZoneEventsView,
     CaregiverLiveLocationView,
     PatientLocationUpdateView,
     PatientMyZonesView,
@@ -11,6 +12,7 @@ from .views import (
 urlpatterns = [
     # Caregiver — zone management
     path('zones/',            CaregiverZoneListCreateView.as_view(), name='geofence-zones'),
+    path('zones/events/',     CaregiverZoneEventsView.as_view(),     name='geofence-caregiver-events'),
     path('zones/<uuid:zone_id>/', CaregiverZoneDetailView.as_view(), name='geofence-zone-detail'),
     path('live-location/',    CaregiverLiveLocationView.as_view(),   name='geofence-live-location'),
 

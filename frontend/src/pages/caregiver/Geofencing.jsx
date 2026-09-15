@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { MapPin, Plus, Trash2, Shield, ShieldAlert, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Circle, useMapEvents } from 'react-leaflet';
+import { MapPin, Plus, Trash2, Shield, ShieldAlert, AlertCircle, CheckCircle2, LocateFixed, Circle as CircleIcon, Hexagon, Undo2, RotateCcw } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Circle, Polygon, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useGeofenceZones, useCreateGeofenceZone, useDeleteGeofenceZone, useGeofenceEvents } from '@/hooks/useGeofence';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { useCaregiverPatients } from '@/hooks/useCaregiver';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 
@@ -18,55 +19,146 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-const DEFAULT_CENTER = [28.6139, 77.2090]; // New Delhi fallback
+const DEFAULT_CENTER = [28.6139, 77.2090]; // fallback until geolocation resolves
+const MAX_RADIUS_M = 100;
+const MIN_RADIUS_M = 1;
+const MAX_POINTS = 8;
+const MIN_POINTS = 3;
+
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const R = 6_371_000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 function LocationPicker({ onPick }) {
   useMapEvents({
-    click(e) {
-      onPick(e.latlng.lat, e.latlng.lng);
-    },
+    click(e) { onPick(e.latlng.lat, e.latlng.lng); },
   });
   return null;
 }
 
+// react-leaflet only applies center/zoom on first mount — this keeps an
+// already-mounted map in sync when the target position changes later
+// (geolocation resolving async, or the caregiver switching patients).
+function RecenterMap({ position, zoom }) {
+  const map = useMap();
+  React.useEffect(() => {
+    if (position) map.setView(position, zoom ?? map.getZoom());
+  }, [position, zoom, map]);
+  return null;
+}
+
 const EVENT_COLORS = {
-  ENTER: { bg: 'bg-emerald-100', text: 'text-emerald-700', icon: CheckCircle2, label: 'Entered Zone' },
+  ENTRY: { bg: 'bg-emerald-100', text: 'text-emerald-700', icon: CheckCircle2, label: 'Entered Zone' },
   EXIT:  { bg: 'bg-rose-100',    text: 'text-rose-700',    icon: ShieldAlert,  label: 'Left Zone'    },
 };
 
-function CreateZoneModal({ onClose }) {
+function CreateZoneModal({ patientId, onClose }) {
   const createZone = useCreateGeofenceZone();
-  const [form, setForm] = useState({ name: '', latitude: '', longitude: '', radius_meters: 200 });
+  const [label, setLabel] = useState('');
+  const [shapeType, setShapeType] = useState('CIRCLE');
+  const [anchor, setAnchor] = useState(null); // [lat, lng]
+  const [radius, setRadius] = useState(50);
+  const [points, setPoints] = useState([]); // polygon vertices, anchor included at index 0
   const [locating, setLocating] = useState(false);
-
-  const hasPoint = form.latitude !== '' && form.longitude !== '';
-  const markerPos = hasPoint ? [parseFloat(form.latitude), parseFloat(form.longitude)] : null;
-
-  const handlePick = (lat, lng) => {
-    setForm(f => ({ ...f, latitude: lat.toFixed(6), longitude: lng.toFixed(6) }));
-  };
+  const [pointError, setPointError] = useState('');
 
   const handleUseMyLocation = () => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      setPointError('Geolocation is not available in this browser.');
+      return;
+    }
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        handlePick(pos.coords.latitude, pos.coords.longitude);
+        const { latitude, longitude } = pos.coords;
+        setAnchor([latitude, longitude]);
+        setPoints([[latitude, longitude]]);
         setLocating(false);
       },
-      () => setLocating(false),
+      () => { setPointError('Could not read your location. Please allow location access, or click a point on the map instead.'); setLocating(false); },
       { enableHighAccuracy: true, timeout: 8000 }
     );
   };
 
+  const handleMapClick = (lat, lng) => {
+    setPointError('');
+    if (!anchor) {
+      setAnchor([lat, lng]);
+      setPoints([[lat, lng]]);
+      return;
+    }
+    if (shapeType === 'CIRCLE') {
+      setAnchor([lat, lng]);
+      setPoints([[lat, lng]]);
+      return;
+    }
+    // POLYGON: add a new vertex, constrained to <=100m of the anchor
+    if (points.length >= MAX_POINTS) {
+      setPointError(`You can place at most ${MAX_POINTS} points.`);
+      return;
+    }
+    const dist = haversineMeters(anchor[0], anchor[1], lat, lng);
+    if (dist > MAX_RADIUS_M) {
+      setPointError(`That point is ${Math.round(dist)}m from your anchor — points must stay within ${MAX_RADIUS_M}m.`);
+      return;
+    }
+    setPoints((prev) => [...prev, [lat, lng]]);
+  };
+
+  const handleUndoPoint = () => {
+    setPointError('');
+    setPoints((prev) => {
+      const next = prev.slice(0, -1);
+      if (next.length === 0) setAnchor(null);
+      else setAnchor(next[0]);
+      return next;
+    });
+  };
+
+  const handleReset = () => {
+    setPointError('');
+    setAnchor(null);
+    setPoints([]);
+  };
+
+  const handleShapeChange = (next) => {
+    setShapeType(next);
+    setPointError('');
+    if (next === 'CIRCLE' && anchor) setPoints([anchor]);
+  };
+
+  const canSubmit = shapeType === 'CIRCLE'
+    ? !!anchor
+    : points.length >= MIN_POINTS;
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    createZone.mutate({
-      name: form.name,
-      latitude: parseFloat(form.latitude),
-      longitude: parseFloat(form.longitude),
-      radius_meters: parseInt(form.radius_meters),
-    }, { onSuccess: onClose });
+    if (!canSubmit || !anchor) return;
+
+    const payload = shapeType === 'CIRCLE'
+      ? {
+          patient_id: patientId,
+          label,
+          shape_type: 'CIRCLE',
+          latitude: anchor[0],
+          longitude: anchor[1],
+          radius_meters: radius,
+        }
+      : {
+          patient_id: patientId,
+          label,
+          shape_type: 'POLYGON',
+          latitude: anchor[0],
+          longitude: anchor[1],
+          points,
+        };
+
+    createZone.mutate(payload, { onSuccess: onClose });
   };
 
   return (
@@ -76,70 +168,108 @@ function CreateZoneModal({ onClose }) {
         className="bg-card rounded-2xl border border-border shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto"
       >
         <h2 className="text-xl font-bold mb-1">Create Safe Zone</h2>
-        <p className="text-sm text-muted-foreground mb-4">Click anywhere on the map to drop a pin, or use your current location. Drag the radius handle below to size the zone.</p>
+        <p className="text-sm text-muted-foreground mb-4">
+          Use your current location, or click anywhere else on the map to pick a different spot. Zones can be up to {MAX_RADIUS_M}m across.
+        </p>
 
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium">Pick a location</span>
-          <button type="button" onClick={handleUseMyLocation} disabled={locating}
-            className="text-xs font-bold text-primary hover:underline disabled:opacity-50">
-            {locating ? 'Locating…' : 'Use my current location'}
+        {/* Shape toggle */}
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <button type="button" onClick={() => handleShapeChange('CIRCLE')}
+            className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${shapeType === 'CIRCLE' ? 'border-primary bg-primary/10 text-primary' : 'border-border/60 text-muted-foreground'}`}>
+            <CircleIcon className="w-4 h-4" /> Circle
+          </button>
+          <button type="button" onClick={() => handleShapeChange('POLYGON')}
+            className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${shapeType === 'POLYGON' ? 'border-primary bg-primary/10 text-primary' : 'border-border/60 text-muted-foreground'}`}>
+            <Hexagon className="w-4 h-4" /> Custom Shape (up to {MAX_POINTS} points)
           </button>
         </div>
 
-        <div className="rounded-xl overflow-hidden border border-border mb-4" style={{ height: 260 }}>
-          <MapContainer center={markerPos || DEFAULT_CENTER} zoom={markerPos ? 15 : 11} style={{ height: '100%', width: '100%' }}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium">
+            {shapeType === 'CIRCLE' ? 'Pick a center point' : `Click up to ${MAX_POINTS} points (${points.length}/${MAX_POINTS})`}
+          </span>
+          <div className="flex items-center gap-3">
+            {shapeType === 'POLYGON' && points.length > 0 && (
+              <button type="button" onClick={handleUndoPoint} className="text-xs font-bold text-muted-foreground hover:text-foreground flex items-center gap-1">
+                <Undo2 className="w-3.5 h-3.5" /> Undo
+              </button>
+            )}
+            {anchor && (
+              <button type="button" onClick={handleReset} className="text-xs font-bold text-muted-foreground hover:text-foreground flex items-center gap-1">
+                <RotateCcw className="w-3.5 h-3.5" /> Reset
+              </button>
+            )}
+            <button type="button" onClick={handleUseMyLocation} disabled={locating}
+              className="text-xs font-bold text-primary hover:underline disabled:opacity-50 flex items-center gap-1">
+              <LocateFixed className="w-3.5 h-3.5" /> {locating ? 'Locating…' : 'Use my current location'}
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-xl overflow-hidden border border-border mb-2" style={{ height: 280 }}>
+          <MapContainer center={anchor || DEFAULT_CENTER} zoom={anchor ? 17 : 11} style={{ height: '100%', width: '100%' }}>
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
-            <LocationPicker onPick={handlePick} />
-            {markerPos && (
+            <LocationPicker onPick={handleMapClick} />
+            <RecenterMap position={anchor} zoom={17} />
+            {anchor && shapeType === 'CIRCLE' && (
               <>
                 <Marker
-                  position={markerPos}
+                  position={anchor}
                   draggable
-                  eventHandlers={{ dragend: (e) => { const { lat, lng } = e.target.getLatLng(); handlePick(lat, lng); } }}
+                  eventHandlers={{ dragend: (e) => { const { lat, lng } = e.target.getLatLng(); setAnchor([lat, lng]); setPoints([[lat, lng]]); } }}
                 />
-                <Circle center={markerPos} radius={Number(form.radius_meters) || 200} pathOptions={{ color: '#0B6E7A', fillOpacity: 0.15 }} />
+                <Circle center={anchor} radius={radius} pathOptions={{ color: '#0B6E7A', fillOpacity: 0.15 }} />
               </>
+            )}
+            {shapeType === 'POLYGON' && points.map((p, i) => (
+              <Marker key={i} position={p} />
+            ))}
+            {shapeType === 'POLYGON' && points.length >= 3 && (
+              <Polygon positions={points} pathOptions={{ color: '#0B6E7A', fillOpacity: 0.15 }} />
+            )}
+            {shapeType === 'POLYGON' && anchor && (
+              <Circle center={anchor} radius={MAX_RADIUS_M} pathOptions={{ color: '#94a3b8', dashArray: '4 6', fill: false }} />
             )}
           </MapContainer>
         </div>
+
+        {pointError && (
+          <p className="text-xs font-semibold text-destructive mb-3 flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {pointError}
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
             <label className="text-sm font-medium mb-1 block">Zone Name</label>
             <input required type="text" placeholder="e.g. Home, Hospital"
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-              value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+              value={label} onChange={e => setLabel(e.target.value)} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+
+          {shapeType === 'CIRCLE' ? (
             <div>
-              <label className="text-sm font-medium mb-1 block">Latitude</label>
-              <input required type="number" step="any" placeholder="28.6139"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                value={form.latitude} onChange={e => setForm(f => ({ ...f, latitude: e.target.value }))} />
+              <label className="text-sm font-medium mb-1 block">Radius (meters)</label>
+              <input type="range" min={MIN_RADIUS_M} max={MAX_RADIUS_M} step={1}
+                className="w-full"
+                value={radius} onChange={e => setRadius(Number(e.target.value))} />
+              <div className="flex items-center justify-between mt-1">
+                <p className="text-xs text-muted-foreground">No minimum, up to {MAX_RADIUS_M}m. Drag the marker or click the map to move it.</p>
+                <span className="text-xs font-bold text-primary">{radius}m</span>
+              </div>
             </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Longitude</label>
-              <input required type="number" step="any" placeholder="77.2090"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                value={form.longitude} onChange={e => setForm(f => ({ ...f, longitude: e.target.value }))} />
-            </div>
-          </div>
-          <div>
-            <label className="text-sm font-medium mb-1 block">Radius (meters)</label>
-            <input type="range" min={50} max={5000} step={10}
-              className="w-full"
-              value={form.radius_meters} onChange={e => setForm(f => ({ ...f, radius_meters: e.target.value }))} />
-            <div className="flex items-center justify-between mt-1">
-              <p className="text-xs text-muted-foreground">Minimum 50m. Drag to resize the circle on the map.</p>
-              <span className="text-xs font-bold text-primary">{form.radius_meters}m</span>
-            </div>
-          </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Need at least {MIN_POINTS} points to form a shape. Every point must stay within the dashed {MAX_RADIUS_M}m guide circle around your first point.
+            </p>
+          )}
+
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
-            <Button type="submit" className="flex-1" disabled={createZone.isPending || !hasPoint}>
+            <Button type="submit" className="flex-1" disabled={createZone.isPending || !canSubmit}>
               {createZone.isPending ? 'Creating…' : 'Create Zone'}
             </Button>
           </div>
@@ -151,8 +281,12 @@ function CreateZoneModal({ onClose }) {
 
 export default function Geofencing() {
   const [showCreate, setShowCreate] = useState(false);
-  const { data: zones = [], isLoading: zonesLoading } = useGeofenceZones();
-  const { data: events = [], isLoading: eventsLoading } = useGeofenceEvents({ limit: 20 });
+  const { data: patients = [], isLoading: patientsLoading } = useCaregiverPatients();
+  const [explicitPatientId, setExplicitPatientId] = useState('');
+  const selectedPatientId = explicitPatientId || patients[0]?.id || '';
+
+  const { data: zones = [], isLoading: zonesLoading } = useGeofenceZones(selectedPatientId);
+  const { data: events = [], isLoading: eventsLoading } = useGeofenceEvents({ patient_id: selectedPatientId, limit: 20 });
   const deleteZone = useDeleteGeofenceZone();
 
   const mapCenter = useMemo(() => {
@@ -162,29 +296,48 @@ export default function Geofencing() {
 
   return (
     <div className="flex flex-col gap-8 py-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold text-foreground">Geofencing</h1>
           <p className="text-muted-foreground mt-1">Define safe zones and get alerted when patients leave them.</p>
         </div>
-        <Button onClick={() => setShowCreate(true)} className="gap-2">
-          <Plus className="w-4 h-4" /> Add Zone
-        </Button>
+        <div className="flex items-center gap-3">
+          <select
+            value={selectedPatientId}
+            onChange={(e) => setExplicitPatientId(e.target.value)}
+            disabled={patientsLoading || !patients.length}
+            className="h-11 rounded-xl border border-border bg-background px-3 text-sm font-bold min-w-[180px]"
+          >
+            {!patients.length && <option value="">No linked patients</option>}
+            {patients.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <Button onClick={() => setShowCreate(true)} className="gap-2" disabled={!selectedPatientId}>
+            <Plus className="w-4 h-4" /> Add Zone
+          </Button>
+        </div>
       </div>
 
       {!zonesLoading && zones.length > 0 && (
         <div className="rounded-2xl overflow-hidden border border-border" style={{ height: 320 }}>
-          <MapContainer center={mapCenter} zoom={12} style={{ height: '100%', width: '100%' }}>
+          <MapContainer center={mapCenter} zoom={16} style={{ height: '100%', width: '100%' }}>
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
+            <RecenterMap position={mapCenter} zoom={16} />
             {zones.map((zone, i) => {
               const pos = [parseFloat(zone.latitude), parseFloat(zone.longitude)];
+              const color = zone.is_active ? '#0B6E7A' : '#94a3b8';
               return (
                 <React.Fragment key={zone.id || i}>
                   <Marker position={pos} />
-                  <Circle center={pos} radius={zone.radius_meters} pathOptions={{ color: zone.is_active ? '#0B6E7A' : '#94a3b8', fillOpacity: 0.15 }} />
+                  {zone.shape_type === 'POLYGON' && zone.points?.length >= 3 ? (
+                    <Polygon positions={zone.points} pathOptions={{ color, fillOpacity: 0.15 }} />
+                  ) : (
+                    <Circle center={pos} radius={zone.radius_meters} pathOptions={{ color, fillOpacity: 0.15 }} />
+                  )}
                 </React.Fragment>
               );
             })}
@@ -199,7 +352,12 @@ export default function Geofencing() {
             <Shield className="w-5 h-5 text-primary" /> Safe Zones
           </h2>
 
-          {zonesLoading ? (
+          {!selectedPatientId ? (
+            <div className="py-10 text-center border-2 border-dashed border-border/50 rounded-2xl bg-card">
+              <MapPin className="w-10 h-10 text-muted-foreground/20 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">Link a patient first to set up geofencing.</p>
+            </div>
+          ) : zonesLoading ? (
             <div className="flex flex-col gap-3">
               {[1, 2].map(i => <Card key={i} className="h-24 animate-pulse bg-muted/40 border-0" />)}
             </div>
@@ -215,11 +373,13 @@ export default function Geofencing() {
                   <Card className="border-border/50 hover:border-primary/30 transition-colors group">
                     <CardContent className="p-4 flex items-center gap-4">
                       <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                        <MapPin className="w-5 h-5" />
+                        {zone.shape_type === 'POLYGON' ? <Hexagon className="w-5 h-5" /> : <MapPin className="w-5 h-5" />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-sm truncate">{zone.name}</h4>
-                        <p className="text-xs text-muted-foreground">{zone.radius_meters}m radius</p>
+                        <h4 className="font-bold text-sm truncate">{zone.label}</h4>
+                        <p className="text-xs text-muted-foreground">
+                          {zone.shape_type === 'POLYGON' ? `Custom shape · ${zone.points?.length || 0} points` : `${zone.radius_meters}m radius`}
+                        </p>
                         <p className="text-xs text-muted-foreground font-mono">
                           {parseFloat(zone.latitude).toFixed(4)}, {parseFloat(zone.longitude).toFixed(4)}
                         </p>
@@ -278,14 +438,14 @@ export default function Geofencing() {
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-sm">
                             <span className={meta.text}>{meta.label}</span>
-                            {ev.zone_name && <span className="text-foreground"> · {ev.zone_name}</span>}
+                            {ev.zone_label && <span className="text-foreground"> · {ev.zone_label}</span>}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {ev.patient_name && <span>{ev.patient_name} · </span>}
-                            {new Date(ev.created_at || ev.timestamp).toLocaleString()}
+                            {new Date(ev.triggered_at).toLocaleString()}
                           </p>
                         </div>
-                        <Badge variant={ev.event_type === 'ENTER' ? 'success' : 'danger'}>
+                        <Badge variant={ev.event_type === 'ENTRY' ? 'success' : 'danger'}>
                           {ev.event_type}
                         </Badge>
                       </motion.div>
@@ -298,7 +458,7 @@ export default function Geofencing() {
         </div>
       </div>
 
-      {showCreate && <CreateZoneModal onClose={() => setShowCreate(false)} />}
+      {showCreate && <CreateZoneModal patientId={selectedPatientId} onClose={() => setShowCreate(false)} />}
     </div>
   );
 }
