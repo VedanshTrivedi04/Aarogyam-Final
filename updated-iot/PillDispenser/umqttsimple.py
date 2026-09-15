@@ -1,3 +1,4 @@
+# MicroPython umqtt.simple client (Standard implementation with IPv4 auto-resolution)
 import usocket as socket
 import ustruct as struct
 from ubinascii import hexlify
@@ -5,6 +6,16 @@ from ubinascii import hexlify
 
 class MQTTException(Exception):
     pass
+
+
+def _encode_len(pkt, sz):
+    i = 1
+    while sz > 0x7F:
+        pkt[i] = (sz & 0x7F) | 0x80
+        sz >>= 7
+        i += 1
+    pkt[i] = sz
+    return i
 
 
 class MQTTClient:
@@ -39,6 +50,8 @@ class MQTTClient:
         self.lw_retain = False
 
     def _send_str(self, s):
+        if isinstance(s, str):
+            s = s.encode("utf-8")
         self.sock.write(struct.pack("!H", len(s)))
         self.sock.write(s)
 
@@ -68,19 +81,25 @@ class MQTTClient:
         self.sock = socket.socket()
         addr = None
         for res in socket.getaddrinfo(self.server, self.port):
-            if len(res[-1]) == 2:
+            if len(res[-1]) == 2:  # IPv4
                 addr = res[-1]
                 break
         if addr is None:
             addr = socket.getaddrinfo(self.server, self.port)[0][-1]
         self.sock.connect(addr)
+
         if self.ssl:
             import ussl
             self.sock = ussl.wrap_socket(self.sock, **self.ssl_params)
-        premsg = bytearray(b"\x10\0\0\0\0\0")
+
+        premsg = bytearray(b"\x10\0\0\0\0")
         msg = bytearray(b"\x04MQTT\x04\x02\0\0")
 
-        sz = 10 + 2 + len(self.client_id)
+        cid = self.client_id
+        if isinstance(cid, str):
+            cid = cid.encode("utf-8")
+
+        sz = 10 + 2 + len(cid)
         msg[6] = clean_session << 1
         if self.user is not None:
             sz += 2 + len(self.user) + 2 + len(self.pswd)
@@ -89,16 +108,10 @@ class MQTTClient:
             sz += 2 + len(self.lw_topic) + 2 + len(self.lw_msg)
             msg[6] |= 0x4 | (self.lw_qos << 3) | (self.lw_retain << 5)
 
-        n = sz
-        i = 1
-        while n > 0x7F:
-            premsg[i] = (n & 0x7F) | 0x80
-            n >>= 7
-            i += 1
-        premsg[i] = n
-        self.sock.write(premsg, i + 2)
+        i = _encode_len(premsg, sz)
+        self.sock.write(premsg, i + 1)
         self.sock.write(msg)
-        self._send_str(self.client_id)
+        self._send_str(cid)
         if self.lw_topic:
             self._send_str(self.lw_topic)
             self._send_str(self.lw_msg)
@@ -122,18 +135,19 @@ class MQTTClient:
         self.sock.write(b"\xc0\0")
 
     def publish(self, topic, msg, retain=False, qos=0):
+        if isinstance(topic, str):
+            topic = topic.encode("utf-8")
+        if isinstance(msg, str):
+            msg = msg.encode("utf-8")
+
         pkt = bytearray(b"\x30\0\0\0")
         pkt[0] |= qos << 1 | retain
         sz = 2 + len(topic) + len(msg)
         if qos > 0:
             sz += 2
         assert sz < 2097152
-        i = 1
-        while sz > 0x7F:
-            pkt[i] = (sz & 0x7F) | 0x80
-            sz >>= 7
-            i += 1
-        pkt[i] = sz
+
+        i = _encode_len(pkt, sz)
         self.sock.write(pkt, i + 1)
         self._send_str(topic)
         if qos > 0:
@@ -154,23 +168,32 @@ class MQTTClient:
         elif qos == 2:
             assert 0
 
-    def subscribe(self, topic, qos=0):
-        assert self.cb is not None, "Subscribe callback is not set"
-        pkt = bytearray(b"\x82\0\0\0\0")
+    def _send_subunsub(self, topic, typ, ack_op, ack_n, qos=0):
+        if isinstance(topic, str):
+            topic = topic.encode("utf-8")
+        pkt = bytearray(4)
+        pkt[0] = typ
         self.pid += 1
-        struct.pack_into("!H", pkt, 1, 2 + 2 + len(topic) + 1)
-        struct.pack_into("!H", pkt, 3, self.pid)
-        self.sock.write(pkt, 5)
+        pid = self.pid
+        i = _encode_len(pkt, 4 + len(topic) + (ack_n > 3))
+        self.sock.write(pkt, i + 1)
+        struct.pack_into("!H", pkt, 0, pid)
+        self.sock.write(pkt, 2)
         self._send_str(topic)
-        self.sock.write(bytes([qos]))
+        if ack_n > 3:
+            self.sock.write(bytes((qos,)))
         while 1:
             op = self.wait_msg()
-            if op == 0x90:
-                resp = self.sock.read(4)
-                assert resp[1] == pkt[3] and resp[2] == pkt[4]
+            if op == ack_op:
+                resp = self.sock.read(ack_n)
+                assert resp[1] == (pid >> 8) and resp[2] == (pid & 0xFF)
                 if resp[3] == 0x80:
                     raise MQTTException(resp[3])
                 return
+
+    def subscribe(self, topic, qos=0):
+        assert self.cb is not None, "Subscribe callback is not set"
+        self._send_subunsub(topic, 0x82, 0x90, 4, qos)
 
     def wait_msg(self):
         res = self.sock.read(1)

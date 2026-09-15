@@ -72,8 +72,11 @@ def connect_mqtt():
         print("[MQTT] Connected to broker successfully!")
 
         # Subscribe to device command topic
-        _client.subscribe(MQTT_TOPIC_COMMANDS)
-        print("[MQTT] Subscribed to command topic:", MQTT_TOPIC_COMMANDS)
+        try:
+            _client.subscribe(MQTT_TOPIC_COMMANDS)
+            print("[MQTT] Subscribed to command topic:", MQTT_TOPIC_COMMANDS)
+        except Exception as sub_err:
+            print("[MQTT] Subscribe warning (publishing still active):", sub_err)
         return True
 
     except Exception as e:

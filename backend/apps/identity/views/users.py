@@ -1,10 +1,15 @@
 """
 apps/identity/views/users.py — User profile, sessions, notification prefs, push devices.
 """
+import uuid
+
 from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
+from django.core.files.storage import default_storage
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.conf import settings
 
 from shared.response import APIResponse
 from ..models import UserSession, NotificationPreferences, UserDevice
@@ -14,6 +19,9 @@ from ..serializers import (
     UserDeviceSerializer, UserDeviceRegisterSerializer,
 )
 from ..services import AuthService
+
+ALLOWED_AVATAR_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
+MAX_AVATAR_BYTES = 5 * 1024 * 1024  # 5MB
 
 
 # ─── User Profile ─────────────────────────────────────────────────────────────
@@ -34,6 +42,34 @@ class UserMeView(APIView):
         s.save()
         return APIResponse.success(UserProfileSerializer(request.user).data,
                                    message='Profile updated.')
+
+
+class UserAvatarUploadView(APIView):
+    """POST /api/v1/users/me/avatar/ — upload a profile photo, replacing any previous one."""
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        uploaded = request.FILES.get('file') or request.FILES.get('avatar')
+        if not uploaded:
+            return APIResponse.error('No file provided.', code='VALIDATION_ERROR')
+
+        if uploaded.content_type not in ALLOWED_AVATAR_TYPES:
+            return APIResponse.error('Only JPEG, PNG, WEBP, or GIF images are allowed.', code='VALIDATION_ERROR')
+        if uploaded.size > MAX_AVATAR_BYTES:
+            return APIResponse.error('Image must be 5MB or smaller.', code='VALIDATION_ERROR')
+
+        ext = (uploaded.name.rsplit('.', 1)[-1] if '.' in uploaded.name else 'jpg').lower()
+        rel_path = f'avatars/{request.user.id}/{uuid.uuid4().hex}.{ext}'
+        saved = default_storage.save(rel_path, uploaded)
+        media_url = getattr(settings, 'MEDIA_URL', '/media/')
+        file_url = request.build_absolute_uri(f'{media_url}{saved}')
+
+        request.user.profile_photo_url = file_url
+        request.user.save(update_fields=['profile_photo_url', 'updated_at'])
+
+        return APIResponse.success(UserProfileSerializer(request.user).data,
+                                   message='Profile photo updated.')
 
 
 # ─── Sessions ─────────────────────────────────────────────────────────────────

@@ -29,6 +29,16 @@ export function useUpdateUserProfile() {
   });
 }
 
+export function useUploadAvatar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file) => userAgent.uploadAvatar(file),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.auth.me() });
+    },
+  });
+}
+
 export function useUpdateNotificationPreferences() {
   const qc = useQueryClient();
   return useMutation({

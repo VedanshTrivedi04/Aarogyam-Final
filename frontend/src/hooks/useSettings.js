@@ -28,8 +28,13 @@ export function useRevokeSession() {
 export function useChangePassword() {
   return useMutation({
     mutationFn: async (data) => {
-      const res = await axiosInstance.post('/auth/password/change/', data);
-      return res.data?.data ?? res.data;
+      try {
+        const res = await axiosInstance.post('/auth/password/change/', data);
+        return res.data?.data ?? res.data;
+      } catch (err) {
+        const message = err.response?.data?.error?.message || err.message || 'Failed to change password.';
+        throw new Error(message, { cause: err });
+      }
     },
   });
 }

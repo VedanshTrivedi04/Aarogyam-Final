@@ -10,6 +10,14 @@ class UserAgent extends AgentBase {
     return this._patch(api.patch('/users/me/', data));
   }
 
+  async uploadAvatar(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this._post(api.post('/users/me/avatar/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }));
+  }
+
   async getNotificationPreferences() {
     return this._get(api.get('/users/me/notifications/'));
   }
