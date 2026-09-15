@@ -228,7 +228,10 @@ EMAIL_TIMEOUT       = 8   # prevents SMTP from hanging HTTP requests if Gmail is
 
 # Bypass SMTP on Hugging Face / Vercel using Anymail HTTP API
 ANYMAIL = {}
-if SENDGRID_API_KEY:
+if os.environ.get('BREVO_API_KEY'):
+    EMAIL_BACKEND = "anymail.backends.brevo.EmailBackend"
+    ANYMAIL["BREVO_API_KEY"] = os.environ.get('BREVO_API_KEY')
+elif SENDGRID_API_KEY:
     EMAIL_BACKEND = "anymail.backends.sendgrid.EmailBackend"
     ANYMAIL["SENDGRID_API_KEY"] = SENDGRID_API_KEY
 elif os.environ.get('RESEND_API_KEY'):

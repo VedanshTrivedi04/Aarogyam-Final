@@ -53,8 +53,8 @@ SECURE_HSTS_PRELOAD             = True
 SESSION_COOKIE_SECURE           = True
 CSRF_COOKIE_SECURE              = True
 
-# Email Backend (Inherits Resend / SendGrid Anymail HTTP backend if configured in base.py)
-if not (os.environ.get('RESEND_API_KEY') or os.environ.get('SENDGRID_API_KEY') or os.environ.get('MAILGUN_API_KEY')):
+# Email Backend (Inherits Brevo / Resend / SendGrid Anymail HTTP backend if configured in base.py)
+if not (os.environ.get('BREVO_API_KEY') or os.environ.get('RESEND_API_KEY') or os.environ.get('SENDGRID_API_KEY') or os.environ.get('MAILGUN_API_KEY')):
     EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
 
 
