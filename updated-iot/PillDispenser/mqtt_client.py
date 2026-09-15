@@ -60,13 +60,18 @@ def connect_mqtt():
 
     try:
         print("[MQTT] Connecting to broker: %s:%d..." % (MQTT_BROKER, MQTT_PORT))
+        is_ssl = (MQTT_PORT == 8883)
+        ssl_params = {"server_hostname": MQTT_BROKER} if is_ssl else {}
+
         _client = MQTTClient(
             client_id=MQTT_CLIENT_ID,
             server=MQTT_BROKER,
             port=MQTT_PORT,
             user=MQTT_USER,
             password=MQTT_PASSWORD,
-            keepalive=60
+            keepalive=60,
+            ssl=is_ssl,
+            ssl_params=ssl_params
         )
         _client.set_callback(_on_message)
         _client.connect()

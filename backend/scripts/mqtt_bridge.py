@@ -117,6 +117,9 @@ def main():
     if MQTT_USER and MQTT_PASSWORD:
         client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
 
+    if MQTT_PORT == 8883:
+        client.tls_set()
+
     client.on_connect = on_connect
     client.on_message = on_message
 
