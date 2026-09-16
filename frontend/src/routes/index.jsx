@@ -57,6 +57,23 @@ const AdminSubscriptions = lazy(() => import('@/pages/admin/Subscriptions'));
 const AdminHardware = lazy(() => import('@/pages/admin/Hardware'));
 const AdminSystemHealth = lazy(() => import('@/pages/admin/SystemHealth'));
 
+// Super Admin Portal
+const SuperAdminLayout = lazy(() => import('@/components/layout/SuperAdminLayout').then(m => ({ default: m.SuperAdminLayout })));
+const SuperAdminDashboard = lazy(() => import('@/pages/super-admin/Dashboard'));
+const SuperAdminPortalDetail = lazy(() => import('@/pages/super-admin/PortalDetail'));
+const SuperAdminUsers = lazy(() => import('@/pages/super-admin/Users'));
+const SuperAdminAuditLog = lazy(() => import('@/pages/super-admin/AuditLog'));
+const SuperAdminTenants = lazy(() => import('@/pages/super-admin/Tenants'));
+const SuperAdminBilling = lazy(() => import('@/pages/super-admin/Billing'));
+const SuperAdminPharmacovigilance = lazy(() => import('@/pages/super-admin/Pharmacovigilance'));
+const SuperAdminDevices = lazy(() => import('@/pages/super-admin/Devices'));
+const SuperAdminNotifications = lazy(() => import('@/pages/super-admin/Notifications'));
+const SuperAdminInsurance = lazy(() => import('@/pages/super-admin/Insurance'));
+const SuperAdminGamification = lazy(() => import('@/pages/super-admin/Gamification'));
+const SuperAdminGeofencing = lazy(() => import('@/pages/super-admin/Geofencing'));
+const SuperAdminSystemHealthPage = lazy(() => import('@/pages/super-admin/SystemHealth'));
+const SuperAdminAnalytics = lazy(() => import('@/pages/super-admin/Analytics'));
+
 // Doctor Portal
 const DoctorHome = lazy(() => import('@/pages/doctor/Home'));
 const CriticalPanel = lazy(() => import('@/pages/doctor/CriticalPanel'));
@@ -410,6 +427,136 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<PageLoader />}>
             <AdminSystemHealth />
+          </Suspense>
+        ),
+      },
+    ],
+  },
+
+  // Super Admin Portal Routes
+  {
+    path: '/super-admin',
+    element: (
+      <ProtectedRoute requiredRole="SUPER_ADMIN">
+        <Suspense fallback={<PageLoader />}>
+          <SuperAdminLayout />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+    children: [
+      {
+        index: true,
+        element: <Navigate to="dashboard" replace />,
+      },
+      {
+        path: 'dashboard',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SuperAdminDashboard />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'portals/:portal',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SuperAdminPortalDetail />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'users',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SuperAdminUsers />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'audit',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SuperAdminAuditLog />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'tenants',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SuperAdminTenants />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'billing',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SuperAdminBilling />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'pharmacovigilance',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SuperAdminPharmacovigilance />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'devices',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SuperAdminDevices />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'notifications',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SuperAdminNotifications />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'insurance',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SuperAdminInsurance />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'gamification',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SuperAdminGamification />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'geofencing',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SuperAdminGeofencing />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'system',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SuperAdminSystemHealthPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'analytics',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SuperAdminAnalytics />
           </Suspense>
         ),
       },

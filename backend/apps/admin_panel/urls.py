@@ -7,6 +7,23 @@ from .views import (
     AdminNotificationDeliveryRatesView, AdminSystemJobsView,
     AdminTestNotificationView,
 )
+from .views_super import (
+    SuperAdminOverviewView, SuperAdminPortalBreakdownView, SuperAdminPortalDetailView,
+    SuperAdminUserListView, SuperAdminChangeUserRoleView, SuperAdminSetUserStatusView,
+    SuperAdminAuditLogView,
+    SuperAdminTenantListCreateView, SuperAdminTenantAssignAdminView, SuperAdminTenantSetStatusView,
+    SuperAdminBillingOverviewView,
+    SuperAdminCaregiverSubscriptionsView, SuperAdminCaregiverSubscriptionAssignView,
+    SuperAdminCaregiverSubscriptionActionView,
+    SuperAdminPharmacovigilanceView,
+    SuperAdminDeviceFleetView,
+    SuperAdminNotificationsCenterView,
+    SuperAdminInsuranceReportsView,
+    SuperAdminGamificationView,
+    SuperAdminGeofencingView,
+    SuperAdminSystemHealthView,
+    SuperAdminAnalyticsView,
+)
 
 urlpatterns = [
     path('metrics/overview/',             MetricsOverviewView.as_view(),             name='admin-metrics-overview'),
@@ -21,4 +38,28 @@ urlpatterns = [
     path('notifications/delivery-rates/', AdminNotificationDeliveryRatesView.as_view(), name='admin-notification-rates'),
     path('system/jobs/',                  AdminSystemJobsView.as_view(),             name='admin-system-jobs'),
     path('notifications/test/',           AdminTestNotificationView.as_view(),       name='admin-notification-test'),
+
+    # Super Admin — cross-portal monitoring (IsSuperAdmin only)
+    path('super/overview/',               SuperAdminOverviewView.as_view(),          name='super-admin-overview'),
+    path('super/portals/',                SuperAdminPortalBreakdownView.as_view(),   name='super-admin-portals'),
+    path('super/portals/<str:portal>/detail/', SuperAdminPortalDetailView.as_view(), name='super-admin-portal-detail'),
+    path('super/users/',                  SuperAdminUserListView.as_view(),          name='super-admin-user-list'),
+    path('super/users/<uuid:pk>/role/',   SuperAdminChangeUserRoleView.as_view(),    name='super-admin-user-role'),
+    path('super/users/<uuid:pk>/status/', SuperAdminSetUserStatusView.as_view(),     name='super-admin-user-status'),
+    path('super/audit/',                  SuperAdminAuditLogView.as_view(),          name='super-admin-audit-log'),
+    path('super/tenants/',                SuperAdminTenantListCreateView.as_view(),  name='super-admin-tenant-list-create'),
+    path('super/tenants/<uuid:pk>/admins/', SuperAdminTenantAssignAdminView.as_view(), name='super-admin-tenant-assign-admin'),
+    path('super/tenants/<uuid:pk>/status/', SuperAdminTenantSetStatusView.as_view(), name='super-admin-tenant-status'),
+    path('super/billing/',                SuperAdminBillingOverviewView.as_view(),   name='super-admin-billing'),
+    path('super/billing/caregivers/',     SuperAdminCaregiverSubscriptionsView.as_view(), name='super-admin-caregiver-subs'),
+    path('super/billing/caregivers/<uuid:user_id>/subscription/', SuperAdminCaregiverSubscriptionAssignView.as_view(), name='super-admin-caregiver-sub-assign'),
+    path('super/billing/caregivers/<uuid:user_id>/subscription/<str:action>/', SuperAdminCaregiverSubscriptionActionView.as_view(), name='super-admin-caregiver-sub-action'),
+    path('super/pharmacovigilance/',      SuperAdminPharmacovigilanceView.as_view(), name='super-admin-pharmacovigilance'),
+    path('super/devices/',                SuperAdminDeviceFleetView.as_view(),       name='super-admin-devices'),
+    path('super/notifications-center/',   SuperAdminNotificationsCenterView.as_view(), name='super-admin-notifications-center'),
+    path('super/insurance/',              SuperAdminInsuranceReportsView.as_view(),  name='super-admin-insurance'),
+    path('super/gamification/',           SuperAdminGamificationView.as_view(),      name='super-admin-gamification'),
+    path('super/geofencing/',             SuperAdminGeofencingView.as_view(),        name='super-admin-geofencing'),
+    path('super/system/',                 SuperAdminSystemHealthView.as_view(),      name='super-admin-system'),
+    path('super/analytics/',              SuperAdminAnalyticsView.as_view(),         name='super-admin-analytics'),
 ]

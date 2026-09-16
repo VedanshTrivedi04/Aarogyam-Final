@@ -19,8 +19,13 @@ const RoleCard = ({ icon: Icon, title, selected, onClick }) => (
   </button>
 );
 
-const redirectForRole = (role) =>
-  role === 'DOCTOR' ? '/doctor' : role === 'CAREGIVER' ? '/caregiver' : '/dashboard';
+const redirectForRole = (role) => {
+  if (role === 'DOCTOR') return '/doctor';
+  if (role === 'CAREGIVER') return '/caregiver';
+  if (role === 'SUPER_ADMIN') return '/super-admin';
+  if (role === 'ADMIN') return '/admin';
+  return '/dashboard';
+};
 
 export default function LoginPage() {
   const location  = useLocation();
