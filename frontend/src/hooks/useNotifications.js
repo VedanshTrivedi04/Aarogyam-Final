@@ -23,7 +23,7 @@ export function useNotifications(params = {}) {
 }
 
 /**
- * Mark a single notification as read
+ * Mark a single notification as read with optimistic UI updates
  */
 export function useMarkNotificationRead() {
   const qc = useQueryClient();
@@ -32,14 +32,47 @@ export function useMarkNotificationRead() {
       const res = await axiosInstance.patch(`/notifications/${id}/read/`);
       return res.data?.data ?? res.data;
     },
-    onSuccess: () => {
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: ['notification'] });
+      const previousNotifications = qc.getQueriesData({ queryKey: ['notification'] });
+
+      qc.setQueriesData({ queryKey: ['notification'] }, (old) => {
+        if (!old || !Array.isArray(old.results)) return old;
+        let wasUnread = false;
+        const updatedResults = old.results.map((n) => {
+          if (n.id === id) {
+            if (!n.read_at && n.status !== 'READ') wasUnread = true;
+            return { ...n, read_at: new Date().toISOString(), status: 'READ' };
+          }
+          return n;
+        });
+
+        return {
+          ...old,
+          results: updatedResults,
+          unreadCount: Math.max(0, (old.unreadCount || 0) - (wasUnread ? 1 : 0)),
+        };
+      });
+
+      return { previousNotifications };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previousNotifications) {
+        context.previousNotifications.forEach(([queryKey, data]) => {
+          qc.setQueryData(queryKey, data);
+        });
+      }
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['notification'] });
+      qc.invalidateQueries({ queryKey: ['caregiver'] });
+      qc.invalidateQueries({ queryKey: ['doctor'] });
     },
   });
 }
 
 /**
- * Mark all notifications as read
+ * Mark all notifications as read with optimistic UI updates
  */
 export function useMarkAllNotificationsRead() {
   const qc = useQueryClient();
@@ -48,14 +81,45 @@ export function useMarkAllNotificationsRead() {
       const res = await axiosInstance.patch('/notifications/read-all/');
       return res.data?.data ?? res.data;
     },
-    onSuccess: () => {
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: ['notification'] });
+      const previousNotifications = qc.getQueriesData({ queryKey: ['notification'] });
+
+      qc.setQueriesData({ queryKey: ['notification'] }, (old) => {
+        if (!old || !Array.isArray(old.results)) return old;
+        const now = new Date().toISOString();
+        const updatedResults = old.results.map((n) => ({
+          ...n,
+          read_at: n.read_at || now,
+          status: 'READ',
+        }));
+
+        return {
+          ...old,
+          results: updatedResults,
+          unreadCount: 0,
+        };
+      });
+
+      return { previousNotifications };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousNotifications) {
+        context.previousNotifications.forEach(([queryKey, data]) => {
+          qc.setQueryData(queryKey, data);
+        });
+      }
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['notification'] });
+      qc.invalidateQueries({ queryKey: ['caregiver'] });
+      qc.invalidateQueries({ queryKey: ['doctor'] });
     },
   });
 }
 
 /**
- * Delete a notification
+ * Delete a notification with optimistic removal
  */
 export function useDeleteNotification() {
   const qc = useQueryClient();
@@ -64,8 +128,34 @@ export function useDeleteNotification() {
       const res = await axiosInstance.delete(`/notifications/${id}/`);
       return res.data;
     },
-    onSuccess: () => {
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: ['notification'] });
+      const previousNotifications = qc.getQueriesData({ queryKey: ['notification'] });
+
+      qc.setQueriesData({ queryKey: ['notification'] }, (old) => {
+        if (!old || !Array.isArray(old.results)) return old;
+        const target = old.results.find((n) => n.id === id);
+        const wasUnread = target && !target.read_at && target.status !== 'READ';
+        return {
+          ...old,
+          results: old.results.filter((n) => n.id !== id),
+          unreadCount: Math.max(0, (old.unreadCount || 0) - (wasUnread ? 1 : 0)),
+        };
+      });
+
+      return { previousNotifications };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previousNotifications) {
+        context.previousNotifications.forEach(([queryKey, data]) => {
+          qc.setQueryData(queryKey, data);
+        });
+      }
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['notification'] });
+      qc.invalidateQueries({ queryKey: ['caregiver'] });
+      qc.invalidateQueries({ queryKey: ['doctor'] });
     },
   });
 }

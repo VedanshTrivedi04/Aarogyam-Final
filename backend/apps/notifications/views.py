@@ -80,7 +80,9 @@ class NotificationListView(APIView):
         if ntype:
             qs = qs.filter(notification_type=ntype.upper())
 
-        unread_count = Notification.objects.filter(user=request.user, read_at__isnull=True).count()
+        unread_count = Notification.objects.filter(
+            user=request.user, read_at__isnull=True, deleted_at__isnull=True
+        ).count()
 
         paginator = StandardResultsPagination()
         page = paginator.paginate_queryset(qs.order_by('-created_at'), request)
@@ -90,25 +92,37 @@ class NotificationListView(APIView):
 
 
 class NotificationMarkReadView(APIView):
-    """PATCH /api/v1/notifications/{id}/read/"""
+    """PATCH or POST /api/v1/notifications/{id}/read/"""
     permission_classes = [IsAuthenticated]
 
     def patch(self, request, notification_id):
-        notif = get_object_or_404(Notification, id=notification_id, user=request.user)
+        notif = get_object_or_404(Notification, id=notification_id, user=request.user, deleted_at__isnull=True)
         notif.mark_read()
-        return APIResponse.success({'id': str(notif.id), 'read_at': notif.read_at.isoformat()})
+        return APIResponse.success({
+            'id': str(notif.id),
+            'status': notif.status,
+            'read_at': notif.read_at.isoformat() if notif.read_at else None,
+        }, message='Notification marked as read.')
+
+    def post(self, request, notification_id):
+        return self.patch(request, notification_id)
 
 
 class NotificationMarkAllReadView(APIView):
-    """PATCH /api/v1/notifications/read-all/"""
+    """PATCH or POST /api/v1/notifications/read-all/"""
     permission_classes = [IsAuthenticated]
 
     def patch(self, request):
         now = timezone.now()
         updated = Notification.objects.filter(
-            user=request.user, read_at__isnull=True
-        ).update(read_at=now, status='READ')
-        return APIResponse.success({'marked_read': updated})
+            user=request.user, read_at__isnull=True, deleted_at__isnull=True
+        ).update(read_at=now, status='READ', updated_at=now)
+        return APIResponse.success({
+            'marked_read': updated
+        }, message=f'{updated} notification(s) marked as read.')
+
+    def post(self, request):
+        return self.patch(request)
 
 
 class NotificationDeleteView(APIView):

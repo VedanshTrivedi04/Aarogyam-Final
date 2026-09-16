@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ShieldAlert, Bell, AlertTriangle,
-  Search, ArrowLeft, MessageSquare, RotateCw, Loader2
+  Search, ArrowLeft, MessageSquare, RotateCw, Loader2,
+  CheckCircle2, CheckCheck, Check
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -11,7 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { useCaregiverPatients, useCaregiverPatientsData } from '@/hooks/useCaregiver';
 import { useDoseAlerts } from '@/hooks/useIoT';
-import { useNotifications } from '@/hooks/useNotifications';
+import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead } from '@/hooks/useNotifications';
 
 const ALERT_STYLES = {
   critical: { bg: 'bg-destructive/5 border-destructive/20', text: 'text-destructive', iconBg: 'bg-destructive/10' },
@@ -21,7 +22,23 @@ const ALERT_STYLES = {
   info: { bg: 'bg-muted/50 border-border/50', text: 'text-foreground', iconBg: 'bg-muted' },
 };
 
-const AlertCard = ({ alert, onAction }) => {
+function Toast({ msg, ok = true }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 20, scale: 0.95 }}
+      className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-5 py-3 rounded-2xl shadow-xl text-sm font-semibold text-white ${
+        ok ? 'bg-emerald-600 shadow-emerald-600/20' : 'bg-destructive shadow-destructive/20'
+      }`}
+    >
+      {ok ? <CheckCircle2 className="w-4 h-4 text-white" /> : <AlertTriangle className="w-4 h-4 text-white" />}
+      <span>{msg}</span>
+    </motion.div>
+  );
+}
+
+const AlertCard = ({ alert, onAction, onMarkRead, isRead, isMarking }) => {
   const s = ALERT_STYLES[alert.type] || ALERT_STYLES.info;
   const Icon = alert.icon || (alert.type === 'critical' ? ShieldAlert : alert.type === 'warning' ? AlertTriangle : Bell);
 
@@ -31,7 +48,7 @@ const AlertCard = ({ alert, onAction }) => {
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
-      className={`p-6 rounded-[2rem] border ${s.bg} flex flex-col md:flex-row gap-6 items-start md:items-center group transition-all hover:shadow-elevation-2`}
+      className={`p-6 rounded-[2rem] border ${s.bg} flex flex-col md:flex-row gap-6 items-start md:items-center group transition-all hover:shadow-elevation-2 ${isRead ? 'opacity-70 border-border/40' : ''}`}
     >
       <div className={`w-14 h-14 rounded-2xl ${s.iconBg} flex items-center justify-center shrink-0`}>
         <Icon className={`w-7 h-7 ${s.text}`} />
@@ -43,6 +60,9 @@ const AlertCard = ({ alert, onAction }) => {
             {alert.type}
           </Badge>
           <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">{alert.time}</span>
+          {!isRead && (
+            <span className="w-2 h-2 rounded-full bg-primary shrink-0 animate-pulse" />
+          )}
         </div>
         <h4 className="font-bold text-lg text-foreground mb-1">
           {alert.patient} <span className="text-muted-foreground font-medium text-sm">{alert.subtitle ? `(${alert.subtitle})` : ''}</span>
@@ -50,11 +70,33 @@ const AlertCard = ({ alert, onAction }) => {
         <p className="text-sm text-foreground/80 leading-relaxed font-medium">{alert.message}</p>
       </div>
 
-      <div className="flex gap-2 w-full md:w-auto">
-        <Button onClick={() => onAction(alert)} className={`flex-1 md:flex-none h-11 px-6 rounded-xl font-bold text-xs uppercase tracking-widest ${alert.type === 'critical' ? 'bg-destructive hover:bg-destructive/90 shadow-lg shadow-destructive/20' : ''}`}>
+      <div className="flex flex-wrap gap-2 w-full md:w-auto items-center">
+        {isRead ? (
+          <span className="h-11 px-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 text-xs font-bold flex items-center gap-1.5 uppercase tracking-wider">
+            <Check className="w-4 h-4" /> Acknowledged
+          </span>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onMarkRead(alert)}
+            disabled={isMarking}
+            className="h-11 px-4 rounded-xl border-primary/30 text-primary hover:bg-primary/10 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-sm transition-all"
+            title="Mark as read"
+          >
+            {isMarking ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4" />
+            )}
+            <span>Mark as read</span>
+          </Button>
+        )}
+
+        <Button onClick={() => onAction(alert)} className={`flex-1 md:flex-none h-11 px-5 rounded-xl font-bold text-xs uppercase tracking-widest ${alert.type === 'critical' ? 'bg-destructive hover:bg-destructive/90 shadow-lg shadow-destructive/20' : ''}`}>
           {alert.action}
         </Button>
-        <button className="h-11 w-11 rounded-xl bg-card border border-border/60 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors">
+        <button className="h-11 w-11 rounded-xl bg-card border border-border/60 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors shrink-0">
           <MessageSquare className="w-4 h-4" />
         </button>
       </div>
@@ -68,11 +110,28 @@ export default function AlertsFeed() {
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeMarkId, setActiveMarkId] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  const [ackedIds, setAckedIds] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('caregiver_acked_alerts') || '[]'));
+    } catch {
+      return new Set();
+    }
+  });
+
+  const showToast = (msg, ok = true) => {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   const { data: patients = [], isLoading: isPatientsLoading } = useCaregiverPatients();
   const { alertsQueries } = useCaregiverPatientsData(patients.map((patient) => patient.id));
   const { data: deviceAlerts, isLoading: isDeviceLoading } = useDoseAlerts();
   const { data: notificationsData, isLoading: isNotifLoading } = useNotifications();
+  const markReadMut = useMarkNotificationRead();
+  const markAllReadMut = useMarkAllNotificationsRead();
 
   const isAnyLoading = isPatientsLoading || isDeviceLoading || alertsQueries.some((q) => q.isLoading);
 
@@ -93,11 +152,14 @@ export default function AlertsFeed() {
       const patient = patients[index];
       items.forEach((job) => {
         if (job?.id && !seenIds.has(`patient-${job.id}`)) {
-          seenIds.add(`patient-${job.id}`);
+          const id = `patient-${job.id}`;
+          seenIds.add(id);
           const medName = job.medication_name || job.schedule?.prescription?.medication?.name || 'Medication';
           const pName = patient?.name || patientNameById.get(patient?.id) || 'Patient';
           list.push({
-            id: `patient-${job.id}`,
+            id,
+            rawNotifId: null,
+            isRead: ackedIds.has(id),
             type: 'critical',
             patient: pName,
             subtitle: patient?.patientCode || job.patient_code,
@@ -117,6 +179,8 @@ export default function AlertsFeed() {
         seenIds.add(id);
         list.push({
           id,
+          rawNotifId: null,
+          isRead: ackedIds.has(id),
           type: alert.dose_status === 'missed' ? 'critical' : 'warning',
           patient: alert.device_name || 'Smart Dispenser',
           subtitle: `Slot ${alert.compartment_number}`,
@@ -133,10 +197,13 @@ export default function AlertsFeed() {
       const id = `notif-${n.id}`;
       if (!seenIds.has(id)) {
         seenIds.add(id);
+        const isRead = !!n.read_at || n.status === 'READ' || ackedIds.has(id);
         const isCritical = ['MISSED_DOSE_ALERT', 'DOSE_MISSED', 'CAREGIVER_ALERT', 'ANOMALY_ALERT', 'ALERT'].includes(n.notification_type);
         const isWarning = ['REFILL_ALERT', 'PRESCRIPTION_EXPIRY', 'GEOFENCE_EXIT'].includes(n.notification_type);
         list.push({
           id,
+          rawNotifId: n.id,
+          isRead,
           type: isCritical ? 'critical' : isWarning ? 'warning' : 'info',
           patient: n.title,
           subtitle: n.notification_type?.replace(/_/g, ' '),
@@ -149,7 +216,54 @@ export default function AlertsFeed() {
     });
 
     return list.sort((left, right) => right.timestamp - left.timestamp);
-  }, [alertsQueries, deviceAlerts, notificationsData, patients]);
+  }, [ackedIds, alertsQueries, deviceAlerts, notificationsData, patients]);
+
+  const handleMarkRead = (alert) => {
+    setActiveMarkId(alert.id);
+    const newAcked = new Set(ackedIds);
+    newAcked.add(alert.id);
+    setAckedIds(newAcked);
+    try {
+      localStorage.setItem('caregiver_acked_alerts', JSON.stringify(Array.from(newAcked)));
+    } catch {}
+
+    if (alert.rawNotifId) {
+      markReadMut.mutate(alert.rawNotifId, {
+        onSuccess: () => {
+          showToast('Alert marked as read.');
+        },
+        onError: () => {
+          showToast('Alert acknowledged.');
+        },
+        onSettled: () => {
+          setActiveMarkId(null);
+        }
+      });
+    } else {
+      setTimeout(() => {
+        setActiveMarkId(null);
+        showToast('Alert acknowledged.');
+      }, 250);
+    }
+  };
+
+  const handleMarkAllRead = () => {
+    const newAcked = new Set(ackedIds);
+    alerts.forEach((a) => newAcked.add(a.id));
+    setAckedIds(newAcked);
+    try {
+      localStorage.setItem('caregiver_acked_alerts', JSON.stringify(Array.from(newAcked)));
+    } catch {}
+
+    markAllReadMut.mutate(undefined, {
+      onSuccess: () => {
+        showToast('All alerts marked as read.');
+      },
+      onError: () => {
+        showToast('All alerts marked as read.');
+      }
+    });
+  };
 
   const handleAction = (alert) => {
     if (alert.id.startsWith('patient-')) {
@@ -176,28 +290,52 @@ export default function AlertsFeed() {
     });
   }, [alerts, filter, searchTerm]);
 
+  const unreadCount = alerts.filter((a) => !a.isRead).length;
+
   return (
-    <div className="flex flex-col gap-8 py-4 max-w-5xl mx-auto">
+    <div className="flex flex-col gap-8 py-4 max-w-5xl mx-auto px-4">
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && <Toast msg={toast.msg} ok={toast.ok} />}
+      </AnimatePresence>
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="flex flex-col gap-1">
           <button onClick={() => navigate('/caregiver/home')} className="flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors mb-2">
             <ArrowLeft className="w-4 h-4" />
             <span className="text-[10px] font-black uppercase tracking-[0.2em]">Dashboard</span>
           </button>
-          <h2 className="text-3xl font-display font-extrabold text-foreground tracking-tight flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-destructive/10 flex items-center justify-center">
               <Bell className="w-5 h-5 text-destructive" />
             </div>
-            Clinical Alerts Feed
-          </h2>
-          <p className="text-muted-foreground font-medium">Live alerts from missed doses and dose-session anomalies.</p>
+            <h2 className="text-3xl font-display font-extrabold text-foreground tracking-tight">
+              Clinical Alerts Feed
+            </h2>
+            {unreadCount > 0 && (
+              <Badge variant="danger" className="h-6 px-2.5 font-bold animate-pulse">
+                {unreadCount} Unread
+              </Badge>
+            )}
+          </div>
+          <p className="text-muted-foreground font-medium text-sm">Live alerts from missed doses, dispenser session anomalies, and clinical updates.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <Button 
+            variant="outline" 
+            className="h-11 px-5 rounded-xl text-xs font-bold uppercase tracking-widest text-primary border-primary/30 hover:bg-primary/10 shadow-sm transition-all disabled:opacity-50" 
+            onClick={handleMarkAllRead} 
+            disabled={unreadCount === 0 || markAllReadMut.isPending}
+          >
+            {markAllReadMut.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <CheckCheck className="w-4 h-4 mr-2" />
+            )}
+            <span>Mark all as read</span>
+          </Button>
           <Button variant="outline" className="h-11 px-5 rounded-xl text-xs font-bold uppercase tracking-widest" onClick={handleRefresh} disabled={isRefreshing}>
             <RotateCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} /> Refresh
-          </Button>
-          <Button variant="ghost" className="h-11 px-5 rounded-xl text-xs font-bold uppercase tracking-widest text-muted-foreground" onClick={() => setSearchTerm('')}>
-            Clear Filter
           </Button>
         </div>
       </div>
@@ -211,7 +349,7 @@ export default function AlertsFeed() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Filter by patient name or alert type..."
-              className="w-full pl-12 pr-4 py-3 bg-card border border-border/50 rounded-2xl outline-none focus:ring-2 focus:ring-primary/20 transition-all font-sans font-medium"
+              className="w-full pl-12 pr-4 py-3 bg-card border border-border/50 rounded-2xl outline-none focus:ring-2 focus:ring-primary/20 transition-all font-sans font-medium shadow-sm"
             />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -237,7 +375,14 @@ export default function AlertsFeed() {
         ) : (
           <AnimatePresence mode="popLayout">
             {filtered.map((alert) => (
-              <AlertCard key={alert.id} alert={alert} onAction={handleAction} />
+              <AlertCard 
+                key={alert.id} 
+                alert={alert} 
+                onAction={handleAction}
+                onMarkRead={handleMarkRead}
+                isRead={alert.isRead}
+                isMarking={activeMarkId === alert.id}
+              />
             ))}
           </AnimatePresence>
         )}

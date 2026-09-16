@@ -5,12 +5,13 @@ import {
   Users, AlertCircle, Search, Pill,
   ChevronRight, Activity, ArrowUpRight, Filter,
   Stethoscope, Calendar, UserCircle, Loader2, Bot, Bell,
+  CheckCircle2, CheckCheck, Check
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { useDoctorPatients, useDoctorPatientsData } from '@/hooks/useDoctor';
-import { useNotifications } from '@/hooks/useNotifications';
+import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead } from '@/hooks/useNotifications';
 
 function timeAgo(dateString) {
   if (!dateString) return '';
@@ -95,6 +96,8 @@ export default function DoctorHome() {
   const patientsData = useDoctorPatientsData(patients);
   const { data: aiAlertsData, isLoading: isAiAlertsLoading } = useNotifications({ type: 'DOCTOR_ALERT', page_size: 5 });
   const aiAlerts = aiAlertsData?.results || [];
+  const markReadMut = useMarkNotificationRead();
+  const markAllReadMut = useMarkAllNotificationsRead();
 
   const enriched = useMemo(() => patients.map(p => {
     const d = patientsData[p.id] || {};
@@ -244,11 +247,24 @@ export default function DoctorHome() {
         <div className="flex flex-col gap-8">
           {/* AI Agent Alerts — patients the Agentic AI flagged for doctor review */}
           <Card className="rounded-[2.5rem] overflow-hidden border-primary/20 bg-gradient-to-br from-primary/5 via-transparent to-transparent">
-            <CardHeader className="p-8 pb-0">
-              <h3 className="text-xl font-display font-bold text-foreground flex items-center gap-3">
-                <Bot className="w-6 h-6 text-primary" /> AI Agent Alerts
-              </h3>
-              <p className="text-xs text-muted-foreground mt-1">Patients the AI Agent flagged for your review</p>
+            <CardHeader className="p-8 pb-0 flex flex-row items-center justify-between">
+              <div>
+                <h3 className="text-xl font-display font-bold text-foreground flex items-center gap-3">
+                  <Bot className="w-6 h-6 text-primary" /> AI Agent Alerts
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1">Patients the AI Agent flagged for your review</p>
+              </div>
+              {aiAlerts.some(a => !a.read_at && a.status !== 'READ') && (
+                <button
+                  onClick={() => markAllReadMut.mutate()}
+                  disabled={markAllReadMut.isPending}
+                  className="text-[10px] font-bold text-primary hover:underline uppercase tracking-wider flex items-center gap-1 shrink-0"
+                  title="Mark all as read"
+                >
+                  <CheckCheck className="w-3.5 h-3.5" />
+                  <span>Mark All</span>
+                </button>
+              )}
             </CardHeader>
             <CardContent className="p-8 flex flex-col gap-4">
               {isAiAlertsLoading ? (
@@ -261,24 +277,48 @@ export default function DoctorHome() {
                   No AI-flagged patients right now.
                 </p>
               ) : (
-                aiAlerts.map((alert) => (
-                  <div
-                    key={alert.id}
-                    className="p-4 bg-card rounded-2xl border border-border/50 flex items-start gap-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                    onClick={() => alert.data?.deep_link && navigate(alert.data.deep_link)}
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                      <Bell className="w-4 h-4" />
+                aiAlerts.map((alert) => {
+                  const isUnread = !alert.read_at && alert.status !== 'READ';
+                  return (
+                    <div
+                      key={alert.id}
+                      className={`p-4 bg-card rounded-2xl border transition-all flex items-start gap-3 shadow-sm hover:shadow-md cursor-pointer group ${
+                        isUnread ? 'border-primary/30 bg-primary/5' : 'border-border/50'
+                      }`}
+                      onClick={() => alert.data?.deep_link && navigate(alert.data.deep_link)}
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                        <Bell className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h5 className={`font-bold text-sm truncate ${isUnread ? 'text-foreground' : 'text-muted-foreground'}`}>{alert.title}</h5>
+                          {isUnread && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{alert.body}</p>
+                        <p className="text-[10px] text-muted-foreground/70 font-black uppercase tracking-widest mt-1.5">
+                          {timeAgo(alert.created_at)}
+                        </p>
+                      </div>
+                      {isUnread ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            markReadMut.mutate(alert.id);
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-primary/15 text-primary transition-colors shrink-0"
+                          title="Mark as read"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <Check className="w-3.5 h-3.5 text-emerald-500/70 shrink-0 mt-1" />
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h5 className="font-bold text-foreground text-sm truncate">{alert.title}</h5>
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{alert.body}</p>
-                      <p className="text-[10px] text-muted-foreground/70 font-black uppercase tracking-widest mt-1.5">
-                        {timeAgo(alert.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
               <Link to="/notifications">
                 <Button variant="ghost" className="w-full h-11 text-primary font-black uppercase tracking-widest text-[10px] hover:bg-primary/10">
