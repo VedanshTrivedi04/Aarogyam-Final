@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Send, Wifi, WifiOff, Loader2, Pill, X, CheckCircle, XCircle,
-  Paperclip, Mic, StopCircle, Download, FileText, Volume2, Phone,
+  Paperclip, Mic, StopCircle, Download, FileText, Volume2, Phone, Video, ClipboardList,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { axiosInstance } from '@/lib/axios';
 import CallModal from '@/components/communications/CallModal';
+import { useCreateDigitalPrescription } from '@/hooks/useDoctor';
+import { useRequestAdherenceReport, useRespondAdherenceRequest } from '@/hooks/useDoctorConsultation';
 
 const _apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 const WS_BASE  = new URL(_apiUrl).origin.replace(/^http/, 'ws');
@@ -39,9 +41,10 @@ function useDoctorChatSocket(sessionId) {
     ws.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
+        const CARD_TYPES = ['message', 'file', 'adherence_request', 'adherence_report', 'prescription'];
         if (data.type === 'history') {
           setMessages(data.messages || []);
-        } else if (data.type === 'message' || data.type === 'file') {
+        } else if (CARD_TYPES.includes(data.type)) {
           setMessages((prev) => [...prev, data]);
         } else if (data.type === 'typing') {
           setIsTyping(data.is_typing);
@@ -210,6 +213,64 @@ function Bubble({ msg }) {
   );
 }
 
+// ─── Structured cards (adherence request/report, prescription) ───────────────
+function AdherenceRequestCard({ msg, isDoctor, onRespond, responding }) {
+  const status = msg.metadata?.status || 'PENDING';
+  return (
+    <div className="max-w-[85%] self-start bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 shadow-sm">
+      <p className="text-xs font-bold text-amber-800 mb-1 flex items-center gap-1.5">
+        <ClipboardList className="w-3.5 h-3.5" /> Adherence Report Request
+      </p>
+      <p className="text-xs text-amber-700">{msg.content}</p>
+      {!isDoctor && status === 'PENDING' ? (
+        <div className="flex gap-2 mt-2">
+          <Button size="sm" className="h-7 text-xs flex-1" disabled={responding}
+            onClick={() => onRespond(msg.metadata.request_id, true)}>Approve</Button>
+          <Button size="sm" variant="outline" className="h-7 text-xs flex-1" disabled={responding}
+            onClick={() => onRespond(msg.metadata.request_id, false)}>Deny</Button>
+        </div>
+      ) : (
+        <Badge variant={status === 'APPROVED' ? 'success' : status === 'DENIED' ? 'danger' : 'warning'}
+          className="mt-2 text-[9px] font-black uppercase">{status}</Badge>
+      )}
+    </div>
+  );
+}
+
+function AdherenceReportCard({ msg }) {
+  const report = msg.metadata?.report || {};
+  const entries = Object.entries(report).filter(([, v]) => v !== null && typeof v !== 'object');
+  return (
+    <div className="max-w-[85%] self-start bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3 shadow-sm">
+      <p className="text-xs font-bold text-emerald-800 mb-2">📊 Adherence Report (last 30 days)</p>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-emerald-900">
+        {entries.map(([k, v]) => (
+          <div key={k} className="truncate">
+            <span className="opacity-60 capitalize">{k.replace(/_/g, ' ')}:</span> <b>{String(v)}</b>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PrescriptionCard({ msg }) {
+  const meta   = msg.metadata || {};
+  const points = meta.instruction_points || [];
+  return (
+    <div className="max-w-[85%] self-start bg-primary/5 border border-primary/20 rounded-2xl px-4 py-3 shadow-sm">
+      <p className="text-xs font-bold text-primary mb-1 flex items-center gap-1.5">
+        <Pill className="w-3.5 h-3.5" /> {meta.medication_name} {meta.dosage ? `(${meta.dosage})` : ''}
+      </p>
+      {points.length > 0 && (
+        <ul className="text-xs text-foreground list-disc list-inside space-y-0.5 mt-1">
+          {points.map((p, i) => <li key={i}>{p}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // ─── Typing indicator ─────────────────────────────────────────────────────────
 function TypingBubble({ name }) {
   return (
@@ -231,13 +292,16 @@ function TypingBubble({ name }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function DoctorChatRoom({ session, isDoctor = false, onEnd, onClose }) {
   const [input,         setInput]         = useState('');
-  const [prescNote,     setPrescNote]     = useState('');
+  const [rxMedName,     setRxMedName]     = useState('');
+  const [rxDosage,      setRxDosage]      = useState('');
+  const [rxPointsText,  setRxPointsText]  = useState('');
   const [showPrescForm, setShowPrescForm] = useState(false);
   const [endNotes,      setEndNotes]      = useState('');
   const [showEndForm,   setShowEndForm]   = useState(false);
   const [uploading,     setUploading]     = useState(false);
   const [recording,     setRecording]     = useState(false);
   const [callOpen,      setCallOpen]      = useState(false);
+  const [callVideo,     setCallVideo]     = useState(false);
 
   const messagesEndRef = useRef(null);
   const typingTimerRef = useRef(null);
@@ -247,6 +311,10 @@ export default function DoctorChatRoom({ session, isDoctor = false, onEnd, onClo
 
   const { messages, sendMessage, sendFileMessage, sendTyping, isConnected, isTyping } =
     useDoctorChatSocket(session?.id);
+
+  const createPrescription  = useCreateDigitalPrescription();
+  const requestAdherence    = useRequestAdherenceReport();
+  const respondAdherence    = useRespondAdherenceRequest();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -321,6 +389,31 @@ export default function DoctorChatRoom({ session, isDoctor = false, onEnd, onClo
   // ── Session end ───────────────────────────────────────────────────────────
   const handleEnd = () => { if (onEnd) onEnd(endNotes); setShowEndForm(false); };
 
+  // ── Point-wise prescription (posted via REST; server drops a chat card + notifies) ──
+  const handleSendPrescription = async () => {
+    const points = rxPointsText.split('\n').map((p) => p.trim()).filter(Boolean);
+    if (!rxMedName.trim() || points.length === 0) return;
+    try {
+      await createPrescription.mutateAsync({
+        patient: session?.patient,
+        session: session?.id,
+        medication_name: rxMedName.trim(),
+        dosage: rxDosage.trim() || 'As directed',
+        instruction_points: points,
+        start_date: new Date().toISOString().slice(0, 10),
+      });
+      setRxMedName(''); setRxDosage(''); setRxPointsText(''); setShowPrescForm(false);
+    } catch (err) { console.error('Prescription failed:', err); }
+  };
+
+  // ── Adherence report request/approval (chat AND call) ─────────────────────
+  const handleRequestAdherence = () => {
+    requestAdherence.mutate(session?.id);
+  };
+  const handleRespondAdherence = (requestId, approved) => {
+    respondAdherence.mutate({ sessionId: session?.id, requestId, approved });
+  };
+
   const otherName   = isDoctor ? (session?.patient_name || 'Patient') : (session?.doctor_name || 'Doctor');
   const isActive    = ['ACTIVE', 'ACCEPTED'].includes(session?.status);
   const isRequested = session?.status === 'REQUESTED';
@@ -359,10 +452,16 @@ export default function DoctorChatRoom({ session, isDoctor = false, onEnd, onClo
 
         <div className="flex items-center gap-2">
           {isActive && (
-            <button onClick={() => setCallOpen(true)} title="Voice Call"
-              className="w-9 h-9 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 flex items-center justify-center transition-colors">
-              <Phone className="w-4 h-4" />
-            </button>
+            <>
+              <button onClick={() => { setCallVideo(false); setCallOpen(true); }} title="Voice Call"
+                className="w-9 h-9 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 flex items-center justify-center transition-colors">
+                <Phone className="w-4 h-4" />
+              </button>
+              <button onClick={() => { setCallVideo(true); setCallOpen(true); }} title="Video Call"
+                className="w-9 h-9 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary flex items-center justify-center transition-colors">
+                <Video className="w-4 h-4" />
+              </button>
+            </>
           )}
           {isDoctor && isActive && (
             <Button variant="danger" size="sm" className="h-8 px-3 text-[10px] font-black uppercase rounded-lg" onClick={() => setShowEndForm(true)}>
@@ -402,27 +501,40 @@ export default function DoctorChatRoom({ session, isDoctor = false, onEnd, onClo
         </div>
       )}
 
-      {/* ── Prescription shortcut (doctor only) ───────────────────────────────── */}
+      {/* ── Prescription + adherence-request shortcuts (doctor only) ─────────── */}
       {isDoctor && isActive && !showEndForm && (
         <div className="px-4 pt-2 flex-shrink-0">
           {showPrescForm ? (
-            <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 mb-2">
-              <textarea value={prescNote} onChange={(e) => setPrescNote(e.target.value)} placeholder="Prescription note…" rows={2}
-                className="w-full resize-none rounded-lg border border-primary/20 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/30 mb-2" />
+            <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 mb-2 space-y-2">
               <div className="flex gap-2">
-                <Button size="sm" className="h-7 flex-1 text-xs" onClick={() => {
-                  if (prescNote.trim()) sendMessage(`📋 Prescription: ${prescNote.trim()}`);
-                  setPrescNote(''); setShowPrescForm(false);
-                }}>Send</Button>
+                <input value={rxMedName} onChange={(e) => setRxMedName(e.target.value)} placeholder="Medicine name"
+                  className="flex-1 rounded-lg border border-primary/20 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/30" />
+                <input value={rxDosage} onChange={(e) => setRxDosage(e.target.value)} placeholder="Dosage (e.g. 500mg)"
+                  className="flex-1 rounded-lg border border-primary/20 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/30" />
+              </div>
+              <textarea value={rxPointsText} onChange={(e) => setRxPointsText(e.target.value)}
+                placeholder={'Instructions, one point per line:\nTake after food\nAvoid alcohol'} rows={3}
+                className="w-full resize-none rounded-lg border border-primary/20 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/30" />
+              <div className="flex gap-2">
+                <Button size="sm" className="h-7 flex-1 text-xs" disabled={createPrescription.isPending} onClick={handleSendPrescription}>
+                  {createPrescription.isPending ? 'Sending…' : 'Send Prescription'}
+                </Button>
                 <Button size="sm" variant="ghost" className="h-7 flex-1 text-xs" onClick={() => setShowPrescForm(false)}>Cancel</Button>
               </div>
             </div>
           ) : (
-            <button onClick={() => setShowPrescForm(true)}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-primary/5 hover:bg-primary/10 transition-colors mb-2 text-primary">
-              <Pill className="w-3.5 h-3.5" />
-              <span className="text-xs font-bold">Send Prescription Note</span>
-            </button>
+            <div className="flex gap-2 mb-2">
+              <button onClick={() => setShowPrescForm(true)}
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-primary/5 hover:bg-primary/10 transition-colors text-primary">
+                <Pill className="w-3.5 h-3.5" />
+                <span className="text-xs font-bold">Add Prescription</span>
+              </button>
+              <button onClick={handleRequestAdherence} disabled={requestAdherence.isPending}
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-amber-500/5 hover:bg-amber-500/10 transition-colors text-amber-600 disabled:opacity-50">
+                <ClipboardList className="w-3.5 h-3.5" />
+                <span className="text-xs font-bold">{requestAdherence.isPending ? 'Requesting…' : 'Request Adherence Report'}</span>
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -443,7 +555,15 @@ export default function DoctorChatRoom({ session, isDoctor = false, onEnd, onClo
           messages.map((msg, i) => (
             <div key={msg.id || i} className="flex flex-col">
               {needsSeparator(messages, i) && <DateSep label={dateLabel(msg.created_at)} />}
-              <Bubble msg={msg} />
+              {msg.type === 'adherence_request' ? (
+                <AdherenceRequestCard msg={msg} isDoctor={isDoctor} onRespond={handleRespondAdherence} responding={respondAdherence.isPending} />
+              ) : msg.type === 'adherence_report' ? (
+                <AdherenceReportCard msg={msg} />
+              ) : msg.type === 'prescription' ? (
+                <PrescriptionCard msg={msg} />
+              ) : (
+                <Bubble msg={msg} />
+              )}
             </div>
           ))
         )}
@@ -529,9 +649,20 @@ export default function DoctorChatRoom({ session, isDoctor = false, onEnd, onClo
         )}
       </div>
 
-      {/* Call modal */}
+      {/* Call modal — scoped to this consultation session (gated server-side on
+          the doctor's availability + live presence, see DoctorCallConsumer) */}
       {callOpen && (
-        <CallModal patientId={isDoctor ? session?.patient_id : undefined} patientName={otherName} onClose={() => setCallOpen(false)} />
+        <CallModal
+          roomId={session?.id}
+          wsPath="doctor-call"
+          video={callVideo}
+          patientName={otherName}
+          onClose={() => setCallOpen(false)}
+          actions={isDoctor ? [
+            { icon: Pill, label: 'Prescription', onClick: () => { setShowPrescForm(true); setCallOpen(false); } },
+            { icon: ClipboardList, label: 'Adherence Report', onClick: handleRequestAdherence },
+          ] : []}
+        />
       )}
     </div>
   );

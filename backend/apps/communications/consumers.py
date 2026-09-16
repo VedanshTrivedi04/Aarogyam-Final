@@ -306,6 +306,137 @@ class CallConsumer(AsyncWebsocketConsumer):
             return None
 
 
+class DoctorCallConsumer(AsyncWebsocketConsumer):
+    """
+    WebRTC signaling relay for doctor ↔ patient voice/video calls, scoped to a
+    ConsultationSession (same offer/answer/ICE relay as CallConsumer — video
+    vs audio is negotiated entirely client-side in the SDP, so one consumer
+    handles both).
+
+    A patient's call_offer is only relayed to the doctor if the doctor is
+    both "accepting calls" (DoctorProfile.is_available) and actually online
+    right now (DoctorProfile.is_online, set by NotificationConsumer) —
+    otherwise the caller gets `call_error` immediately instead of a ring that
+    nobody will ever answer.
+
+    Protocol: identical to CallConsumer (call_offer/call_answer/ice_candidate/
+    call_end/call_ringing), plus:
+      { "type": "call_error", "reason": "doctor_unavailable" }
+    """
+
+    async def connect(self):
+        user = self.scope.get('user')
+        if not user or not user.is_authenticated:
+            await self.close(code=4001)
+            return
+
+        self.session_id = str(self.scope['url_route']['kwargs']['session_id'])
+        self.group_name = f'doctor_call_{self.session_id}'
+        self.user = user
+
+        session = await self._get_session()
+        if session is None:
+            await self.close(code=4003)
+            return
+        self.session = session
+
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.accept()
+
+        peer_info = await self._peer_join_info()
+        await self.channel_layer.group_send(self.group_name, {
+            'type':    'call_relay',
+            'payload': {'type': 'peer_joined', 'from': str(self.user.id), **peer_info},
+        })
+
+    async def disconnect(self, close_code):
+        if hasattr(self, 'group_name'):
+            await self.channel_layer.group_send(self.group_name, {
+                'type':    'call_relay',
+                'payload': {'type': 'call_end', 'from': str(self.user.id)},
+            })
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    async def receive(self, text_data):
+        try:
+            data = json.loads(text_data)
+        except json.JSONDecodeError:
+            return
+
+        allowed = {'call_offer', 'call_answer', 'ice_candidate', 'call_end', 'call_ringing'}
+        if data.get('type') not in allowed:
+            return
+
+        if data.get('type') == 'call_offer':
+            is_doctor = await self._is_doctor()
+            if not is_doctor:
+                doctor_ready = await self._doctor_is_reachable()
+                if not doctor_ready:
+                    await self.send(text_data=json.dumps({
+                        'type': 'call_error', 'reason': 'doctor_unavailable',
+                    }))
+                    return
+
+        data['from'] = str(self.user.id)
+        await self.channel_layer.group_send(self.group_name, {
+            'type':    'call_relay',
+            'payload': data,
+        })
+
+    async def call_relay(self, event):
+        payload = event['payload']
+        if payload.get('from') == str(self.user.id) and payload.get('type') != 'peer_joined':
+            return
+        await self.send(text_data=json.dumps(payload))
+
+    @database_sync_to_async
+    def _get_session(self):
+        from apps.doctor_portal.models import ConsultationSession
+        try:
+            session = ConsultationSession.objects.select_related(
+                'doctor__user', 'patient__user'
+            ).get(id=self.session_id)
+            allowed = {str(session.doctor.user_id), str(session.patient.user_id)}
+            if str(self.user.id) not in allowed:
+                return None
+            if session.status not in ('ACCEPTED', 'ACTIVE'):
+                return None
+            return session
+        except ConsultationSession.DoesNotExist:
+            return None
+
+    @database_sync_to_async
+    def _is_doctor(self):
+        return str(self.user.id) == str(self.session.doctor.user_id)
+
+    @database_sync_to_async
+    def _peer_join_info(self):
+        """Patient details for the doctor's incoming-call panel (or vice versa)."""
+        session = self.session
+        if str(self.user.id) == str(session.patient.user_id):
+            patient = session.patient
+            return {
+                'patient': {
+                    'id':           str(patient.id),
+                    'name':         getattr(patient.user, 'full_name', None) or patient.user.email,
+                    'patient_code': getattr(patient, 'patient_code', None),
+                }
+            }
+        doctor = session.doctor
+        return {
+            'doctor': {
+                'id':   str(doctor.id),
+                'name': getattr(doctor.user, 'full_name', None) or doctor.user.email,
+                'specialization': doctor.specialization,
+            }
+        }
+
+    @database_sync_to_async
+    def _doctor_is_reachable(self):
+        self.session.doctor.refresh_from_db()
+        return self.session.doctor.is_reachable_for_calls()
+
+
 # ── Per-user notification push channel ──────────────────────────────────────
 
 class NotificationConsumer(AsyncWebsocketConsumer):
@@ -329,13 +460,26 @@ class NotificationConsumer(AsyncWebsocketConsumer):
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
+        await self._set_doctor_online(True)
 
     async def disconnect(self, close_code):
         if hasattr(self, 'group_name'):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        await self._set_doctor_online(False)
 
     async def receive(self, text_data):
         pass  # client never sends anything to this channel
+
+    @database_sync_to_async
+    def _set_doctor_online(self, online: bool):
+        """This socket is the doctor's live-presence signal — a doctor is only
+        reachable for a new call while it's open, regardless of the
+        is_available toggle."""
+        from django.utils import timezone
+        from apps.doctor_portal.models import DoctorProfile
+        DoctorProfile.objects.filter(user_id=self.user.id).update(
+            is_online=online, last_seen_at=timezone.now(),
+        )
 
     # ── Incoming group events ─────────────────────────────────────────────────
     async def user_notification(self, event):
@@ -459,6 +603,7 @@ class DoctorChatConsumer(AsyncWebsocketConsumer):
             'file_name':   event.get('file_name'),
             'file_size':   event.get('file_size'),
             'mime_type':   event.get('mime_type'),
+            'metadata':    event.get('metadata'),
             'sender_id':   event['sender_id'],
             'sender_name': event['sender_name'],
             'created_at':  event['created_at'],
@@ -513,6 +658,7 @@ class DoctorChatConsumer(AsyncWebsocketConsumer):
                 'file_name':   m.file_name,
                 'file_size':   m.file_size,
                 'mime_type':   m.mime_type,
+                'metadata':    m.metadata,
                 'sender_id':   str(m.sender_id),
                 'sender_name': getattr(m.sender, 'full_name', None) or m.sender.email,
                 'created_at':  m.created_at.isoformat(),

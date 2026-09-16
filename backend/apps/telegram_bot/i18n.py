@@ -32,6 +32,12 @@ MESSAGES = {
               "Please check your inbox and type that code here.\n"
               "It expires in {minutes} minutes.",
     },
+    'otp_send_failed': {
+        'hi': "❗ Email bhejne mein problem hui. Kripya thodi der baad apna email dobara type karein.\n"
+              "Agar problem bani rahe toh support@medadhere.app se contact karein.",
+        'en': "❗ We couldn't send the verification email right now. Please type your email again in a "
+              "few minutes.\nIf this keeps happening, contact support@medadhere.app.",
+    },
     'otp_invalid': {
         'hi': "Code galat hai. Dobara try karein.",
         'en': "Incorrect code. Please try again.",

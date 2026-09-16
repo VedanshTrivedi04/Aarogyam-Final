@@ -1,4 +1,7 @@
 import os
+import logging
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from rest_framework import viewsets, status, serializers as drf_serializers
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -7,7 +10,10 @@ from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from django.core.files.storage import default_storage
 from django.conf import settings
-from .models import DoctorProfile, DoctorPatientLink, DigitalPrescription, ConsultationSession, ConsultationMessage
+from .models import (
+    DoctorProfile, DoctorPatientLink, DigitalPrescription,
+    ConsultationSession, ConsultationMessage, AdherenceReportRequest,
+)
 from .serializers import (
     DoctorProfileSerializer,
     DoctorPatientLinkSerializer,
@@ -15,6 +21,55 @@ from .serializers import (
     ConsultationSessionSerializer,
     ConsultationMessageSerializer,
 )
+
+logger = logging.getLogger('medadhere')
+
+
+def _broadcast_consultation_message(msg):
+    """Push a ConsultationMessage live to the doctor_chat_<session_id> WS group."""
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        return
+    sender_name = getattr(msg.sender, 'full_name', None) or msg.sender.email
+    event = {
+        'type':        'doctor_chat_message',
+        'id':          str(msg.id),
+        'msg_type':    msg.message_type,
+        'content':     msg.content,
+        'file_url':    msg.file_url,
+        'file_name':   msg.file_name,
+        'file_size':   msg.file_size,
+        'mime_type':   msg.mime_type,
+        'metadata':    msg.metadata,
+        'sender_id':   str(msg.sender_id),
+        'sender_name': sender_name,
+        'created_at':  msg.created_at.isoformat(),
+    }
+    try:
+        async_to_sync(channel_layer.group_send)(f'doctor_chat_{msg.session_id}', event)
+    except Exception as exc:
+        logger.debug("Could not broadcast consultation message %s: %s", msg.id, exc)
+
+
+def _notify_other_party(session, actor_user, notif_type, preview):
+    """Push a real-time notification event to the other session participant."""
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        return
+    doctor_uid  = str(session.doctor.user_id)
+    patient_uid = str(session.patient.user_id)
+    other_uid   = patient_uid if str(actor_user.id) == doctor_uid else doctor_uid
+    sender_name = getattr(actor_user, 'full_name', None) or actor_user.email
+    try:
+        async_to_sync(channel_layer.group_send)(
+            f'user_notif_{other_uid}',
+            {'type': 'user_notification', 'payload': {
+                'type': notif_type, 'from': sender_name, 'preview': preview,
+                'session_id': str(session.id),
+            }},
+        )
+    except Exception as exc:
+        logger.debug("Could not notify other party for session %s: %s", session.id, exc)
 
 
 class DoctorProfileViewSet(viewsets.ModelViewSet):
@@ -32,6 +87,19 @@ class DoctorProfileViewSet(viewsets.ModelViewSet):
         if DoctorProfile.objects.filter(user=self.request.user).exists():
             raise drf_serializers.ValidationError({'detail': 'Doctor profile already exists.'})
         serializer.save(user=self.request.user)
+
+    @action(detail=False, methods=['post'], url_path='availability')
+    def availability(self, request):
+        """POST .../doctor/profiles/availability/ — doctor toggles accepting-calls."""
+        if not hasattr(request.user, 'doctor_profile'):
+            return Response({'detail': 'Only doctors have an availability toggle.'}, status=status.HTTP_403_FORBIDDEN)
+        profile = request.user.doctor_profile
+        is_available = request.data.get('is_available')
+        if is_available is None:
+            return Response({'detail': 'is_available is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        profile.is_available = bool(is_available)
+        profile.save(update_fields=['is_available'])
+        return Response(DoctorProfileSerializer(profile).data)
 
 
 class DoctorPatientLinkViewSet(viewsets.ModelViewSet):
@@ -119,7 +187,36 @@ class DigitalPrescriptionViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not hasattr(user, 'doctor_profile'):
             raise drf_serializers.ValidationError({'detail': 'Only doctors can create digital prescriptions.'})
-        serializer.save(doctor=user.doctor_profile)
+
+        points = self.request.data.get('instruction_points') or []
+        instructions = serializer.validated_data.get('instructions') or ''
+        if not instructions and points:
+            instructions = '\n'.join(f'- {p}' for p in points)
+
+        rx = serializer.save(doctor=user.doctor_profile, instructions=instructions, instruction_points=points)
+
+        # If created from a live consultation, link it and drop a prescription
+        # card into the chat so the patient sees it immediately + it's stored
+        # as part of that session's history.
+        session_id = self.request.data.get('session')
+        if session_id:
+            session = ConsultationSession.objects.filter(id=session_id, doctor=user.doctor_profile).first()
+            if session:
+                rx.session = session
+                rx.save(update_fields=['session'])
+                msg = ConsultationMessage.objects.create(
+                    session=session, sender=user,
+                    content=f'Prescribed {rx.medication_name} ({rx.dosage})',
+                    message_type='prescription',
+                    metadata={
+                        'prescription_id': str(rx.id),
+                        'medication_name': rx.medication_name,
+                        'dosage': rx.dosage,
+                        'instruction_points': points,
+                    },
+                )
+                _broadcast_consultation_message(msg)
+                _notify_other_party(session, user, 'prescription', f'New prescription: {rx.medication_name}')
 
     @action(detail=True, methods=['patch'], url_path='accept')
     def accept(self, request, pk=None):
@@ -163,6 +260,8 @@ class ConsultationSessionViewSet(viewsets.ModelViewSet):
             doctor = DoctorProfile.objects.get(id=doctor_id)
         except DoctorProfile.DoesNotExist:
             raise drf_serializers.ValidationError({'detail': 'Doctor not found.'})
+        if not doctor.is_available:
+            raise drf_serializers.ValidationError({'detail': 'This doctor is not accepting consultations right now.'})
         # Prevent duplicate open sessions
         existing = ConsultationSession.objects.filter(
             doctor=doctor,
@@ -213,7 +312,120 @@ class ConsultationSessionViewSet(viewsets.ModelViewSet):
         session.ended_at     = timezone.now()
         session.doctor_notes = request.data.get('notes', session.doctor_notes)
         session.save(update_fields=['status', 'ended_at', 'doctor_notes'])
+
+        self._notify_caregivers_of_prescriptions(session)
+
         return Response(ConsultationSessionSerializer(session, context={'request': request}).data)
+
+    def _notify_caregivers_of_prescriptions(self, session):
+        """On call/session end, alert the patient's caregivers — but only if a
+        prescription actually came out of this session."""
+        prescriptions = list(session.prescriptions.all())
+        if not prescriptions:
+            return
+
+        from apps.clinical.models import PatientCaregiverLink
+        from apps.notifications.services import NotificationDispatcher
+        from apps.notifications.models import NotificationType
+
+        lines = []
+        for rx in prescriptions:
+            points = rx.instruction_points or []
+            detail = '; '.join(points) if points else rx.instructions
+            lines.append(f'{rx.medication_name} ({rx.dosage}) — {detail}')
+        body = 'New prescription(s) from Dr. {}: \n{}'.format(
+            getattr(session.doctor.user, 'full_name', None) or session.doctor.user.email,
+            '\n'.join(lines),
+        )
+
+        links = PatientCaregiverLink.objects.filter(
+            patient=session.patient, is_active=True, can_receive_alerts=True
+        ).select_related('caregiver__user')
+
+        for link in links:
+            try:
+                NotificationDispatcher.dispatch(
+                    user=link.caregiver.user,
+                    notification_type=NotificationType.CONSULTATION_PRESCRIPTION,
+                    title='New prescription from consultation',
+                    body=body,
+                    data={'session_id': str(session.id), 'prescription_ids': [str(p.id) for p in prescriptions]},
+                )
+            except Exception as exc:
+                logger.warning("Failed to notify caregiver %s of prescription: %s", link.caregiver_id, exc)
+
+    @action(detail=True, methods=['post'], url_path='request-adherence')
+    def request_adherence(self, request, pk=None):
+        """POST .../consultations/{id}/request-adherence/ — doctor asks to view
+        the patient's adherence report. Nothing is shared until the patient
+        approves via respond-adherence/. Usable from chat AND from a live call."""
+        session = self.get_object()
+        if not hasattr(request.user, 'doctor_profile') or session.doctor != request.user.doctor_profile:
+            return Response({'detail': 'Only the assigned doctor can request this.'}, status=status.HTTP_403_FORBIDDEN)
+        if session.status not in ('ACTIVE', 'ACCEPTED'):
+            return Response({'detail': 'Session is not active.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        pending = session.adherence_requests.filter(status='PENDING').first()
+        if pending:
+            return Response(
+                {'detail': 'A request is already pending.', 'request_id': str(pending.id)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        req = AdherenceReportRequest.objects.create(session=session, requested_by=request.user)
+        msg = ConsultationMessage.objects.create(
+            session=session, sender=request.user,
+            content='Requested access to your adherence report.',
+            message_type='adherence_request',
+            metadata={'request_id': str(req.id), 'status': 'PENDING'},
+        )
+        _broadcast_consultation_message(msg)
+        _notify_other_party(session, request.user, 'adherence_request', 'Requested your adherence report')
+        return Response({'request_id': str(req.id), 'message_id': str(msg.id)}, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='respond-adherence')
+    def respond_adherence(self, request, pk=None):
+        """POST .../consultations/{id}/respond-adherence/ {request_id, approved}
+        — patient approves/denies. On approval, the report is fetched and
+        dropped into the chat as a structured message (this also becomes the
+        permanent history record on both sides)."""
+        session = self.get_object()
+        if not hasattr(request.user, 'patient_profile') or session.patient != request.user.patient_profile:
+            return Response({'detail': 'Only the patient can respond to this.'}, status=status.HTTP_403_FORBIDDEN)
+
+        request_id = request.data.get('request_id')
+        approved   = bool(request.data.get('approved'))
+        try:
+            req = session.adherence_requests.get(id=request_id, status='PENDING')
+        except AdherenceReportRequest.DoesNotExist:
+            return Response({'detail': 'No pending request found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        req.status       = 'APPROVED' if approved else 'DENIED'
+        req.responded_at = timezone.now()
+        req.save(update_fields=['status', 'responded_at'])
+
+        # Reflect the decision on the original request card
+        ConsultationMessage.objects.filter(
+            session=session, message_type='adherence_request', metadata__request_id=str(req.id)
+        ).update(metadata={'request_id': str(req.id), 'status': req.status})
+
+        if not approved:
+            msg = ConsultationMessage.objects.create(
+                session=session, sender=request.user, content='Declined the adherence report request.',
+            )
+            _broadcast_consultation_message(msg)
+            return Response({'status': 'DENIED'})
+
+        from apps.scheduling.services import AdherenceReportService
+        report = AdherenceReportService.get_summary(session.patient, days=30)
+        msg = ConsultationMessage.objects.create(
+            session=session, sender=request.user, content='Shared adherence report.',
+            message_type='adherence_report',
+            metadata={'request_id': str(req.id), 'report': report},
+        )
+        _broadcast_consultation_message(msg)
+        _notify_other_party(session, request.user, 'adherence_report', 'Shared their adherence report')
+        return Response({'status': 'APPROVED', 'report': report, 'message_id': str(msg.id)})
 
     @action(detail=True, methods=['get'], url_path='messages')
     def messages(self, request, pk=None):

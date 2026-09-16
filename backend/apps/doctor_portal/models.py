@@ -25,9 +25,15 @@ class DoctorProfile(BaseModel):
     rating              = models.DecimalField(max_digits=3, decimal_places=1, default=5.0)
     review_count        = models.PositiveIntegerField(default=0)
     consultation_fee    = models.PositiveIntegerField(default=300)  # INR
-    is_available        = models.BooleanField(default=True)
+    is_available        = models.BooleanField(default=True)   # doctor's own "accepting calls/consults" toggle
+    is_online           = models.BooleanField(default=False)  # live WS presence, set by NotificationConsumer
+    last_seen_at        = models.DateTimeField(null=True, blank=True)
     next_slot           = models.CharField(max_length=100, blank=True, default='')
     languages           = models.JSONField(default=list, blank=True)
+
+    def is_reachable_for_calls(self) -> bool:
+        """Gate for starting a new call: must have the toggle on AND an open socket."""
+        return self.is_available and self.is_online
 
     class Meta:
         db_table = 'doctor_profiles'
@@ -62,6 +68,7 @@ class DigitalPrescription(BaseModel):
     medication_name         = models.CharField(max_length=200)
     dosage                  = models.CharField(max_length=100)
     instructions            = models.TextField()
+    instruction_points      = models.JSONField(default=list, blank=True)  # ["Take after food", "Avoid alcohol", ...]
     start_date              = models.DateField()
     end_date                = models.DateField(null=True, blank=True)
     notes                   = models.TextField(null=True, blank=True)
@@ -69,6 +76,10 @@ class DigitalPrescription(BaseModel):
     current_pill_count      = models.IntegerField(null=True, blank=True)
     is_accepted             = models.BooleanField(null=True)     # None=pending, True=accepted, False=rejected
     accepted_at             = models.DateTimeField(null=True, blank=True)
+    session                 = models.ForeignKey(
+        'ConsultationSession', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='prescriptions'
+    )
     converted_prescription  = models.OneToOneField(
         'clinical.Prescription', null=True, blank=True,
         on_delete=models.SET_NULL, related_name='digital_source'
@@ -112,17 +123,24 @@ class ConsultationSession(BaseModel):
 
 
 class ConsultationMessage(BaseModel):
-    """A single chat message within a consultation session (text or file)."""
-    MESSAGE_TYPES = [('text', 'Text'), ('file', 'File')]
+    """A single chat message within a consultation session (text, file, or a structured card)."""
+    MESSAGE_TYPES = [
+        ('text', 'Text'),
+        ('file', 'File'),
+        ('adherence_request', 'Adherence Report Request'),
+        ('adherence_report', 'Adherence Report'),
+        ('prescription', 'Prescription'),
+    ]
 
     session      = models.ForeignKey(ConsultationSession, on_delete=models.CASCADE, related_name='messages')
     sender       = models.ForeignKey('identity.User', on_delete=models.CASCADE)
     content      = models.TextField(blank=True, default='')
-    message_type = models.CharField(max_length=10, choices=MESSAGE_TYPES, default='text', db_index=True)
+    message_type = models.CharField(max_length=20, choices=MESSAGE_TYPES, default='text', db_index=True)
     file_url     = models.CharField(max_length=1000, blank=True, null=True)
     file_name    = models.CharField(max_length=255, blank=True, null=True)
     file_size    = models.BigIntegerField(null=True, blank=True)
     mime_type    = models.CharField(max_length=120, blank=True, null=True)
+    metadata     = models.JSONField(default=dict, blank=True)  # adherence data / prescription id / request id
     created_at   = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -131,3 +149,25 @@ class ConsultationMessage(BaseModel):
 
     def __str__(self):
         return f'Msg in {self.session_id} by {self.sender_id}'
+
+
+ADHERENCE_REQUEST_STATUS = [
+    ('PENDING',  'Pending'),
+    ('APPROVED', 'Approved'),
+    ('DENIED',   'Denied'),
+]
+
+
+class AdherenceReportRequest(BaseModel):
+    """A doctor's request to view a patient's adherence report, gated on patient approval."""
+    session       = models.ForeignKey(ConsultationSession, on_delete=models.CASCADE, related_name='adherence_requests')
+    requested_by  = models.ForeignKey('identity.User', on_delete=models.CASCADE, related_name='adherence_requests_made')
+    status        = models.CharField(max_length=10, choices=ADHERENCE_REQUEST_STATUS, default='PENDING', db_index=True)
+    responded_at  = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'doctor_adherence_report_requests'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'AdherenceRequest {self.id} [{self.status}] for session {self.session_id}'

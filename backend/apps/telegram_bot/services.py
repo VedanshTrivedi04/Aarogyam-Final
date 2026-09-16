@@ -358,12 +358,19 @@ class TelegramConversationHandler:
             TelegramService.send_message(session.chat_id, t(lang, 'email_not_found'))
             return {'status': 'no_account_match'}
 
+        sent = TelegramEmailOTPService.generate_and_send_otp(session.chat_id, user)
+        if not sent:
+            # Don't claim success and strand the user in AWAITING_OTP waiting
+            # for a code that never arrives — stay in AWAITING_EMAIL so
+            # re-submitting the same email retries the send.
+            TelegramService.send_message(session.chat_id, t(lang, 'otp_send_failed'))
+            return {'status': 'otp_send_failed'}
+
         session.email = email
         session.state = 'AWAITING_OTP'
         session.state_data['pending_user_id'] = str(user.id)
         session.save(update_fields=['email', 'state', 'state_data', 'updated_at'])
 
-        TelegramEmailOTPService.generate_and_send_otp(session.chat_id, user)
         TelegramService.send_message(
             session.chat_id, t(lang, 'otp_sent', email=email, minutes=OTP_TTL_SECONDS // 60)
         )

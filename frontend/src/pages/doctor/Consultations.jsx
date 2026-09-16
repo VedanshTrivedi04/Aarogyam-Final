@@ -42,8 +42,8 @@ function SessionRow({ session, onOpen, onAccept, onReject, acceptPending, reject
           Code: {session.patient_code || '—'}
           {session.requested_at && ` · Requested ${new Date(session.requested_at).toLocaleDateString()}`}
         </p>
-        {session.last_message && (
-          <p className="text-xs text-muted-foreground truncate mt-1 italic">"{session.last_message}"</p>
+        {session.last_message?.content && (
+          <p className="text-xs text-muted-foreground truncate mt-1 italic">"{session.last_message.content}"</p>
         )}
       </div>
 

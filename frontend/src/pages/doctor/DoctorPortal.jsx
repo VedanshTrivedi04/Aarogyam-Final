@@ -16,7 +16,30 @@ import {
 import { Card, CardContent, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { useDoctorPatients, useDoctorPatientsData } from '@/hooks/useDoctor';
+import { useDoctorPatients, useDoctorPatientsData, useDoctorProfile } from '@/hooks/useDoctor';
+import { useSetAvailability } from '@/hooks/useDoctorConsultation';
+
+function AvailabilityToggle() {
+  const { data: profile } = useDoctorProfile();
+  const setAvailability = useSetAvailability();
+  const isAvailable = profile?.is_available ?? true;
+
+  return (
+    <button
+      onClick={() => setAvailability.mutate(!isAvailable)}
+      disabled={setAvailability.isPending}
+      title={isAvailable ? 'Patients can request calls/consults' : 'You will not receive new calls or consult requests'}
+      className={`flex items-center gap-2.5 h-12 px-4 rounded-xl border transition-colors ${
+        isAvailable ? 'bg-success/10 border-success/30 text-success' : 'bg-muted border-border text-muted-foreground'
+      }`}
+    >
+      <span className={`w-2.5 h-2.5 rounded-full ${isAvailable ? 'bg-success animate-pulse' : 'bg-muted-foreground/50'}`} />
+      <span className="text-xs font-black uppercase tracking-wider">
+        {isAvailable ? 'Accepting Calls' : 'Unavailable'}
+      </span>
+    </button>
+  );
+}
 
 const PatientRow = ({ patient, data = {}, onClick }) => {
   const { adherence, alerts, isLoading } = data;
@@ -110,6 +133,7 @@ export default function DoctorPortal() {
           <p className="text-muted-foreground font-medium">Monitoring {patients.length} active patients under your care.</p>
         </div>
         <div className="flex gap-3">
+          <AvailabilityToggle />
           <Button variant="outline" className="h-12 bg-card"><Filter className="w-4 h-4 mr-2" /> All Patients</Button>
           <Button className="h-12 px-6 shadow-lg bg-primary hover:bg-primary/90"><Plus className="w-4 h-4 mr-2" /> Add Patient</Button>
         </div>

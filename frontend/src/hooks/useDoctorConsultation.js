@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { doctorAgent } from '@/agents/doctor.agent';
+import { qk } from './qk';
 
 export function useConsultations() {
   return useQuery({
@@ -59,5 +60,28 @@ export function useRespondToPrescription() {
   return useMutation({
     mutationFn: ({ prescriptionId, accepted }) => doctorAgent.respondToPrescription(prescriptionId, accepted),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['my-doctor-prescriptions'] }),
+  });
+}
+
+export function useSetAvailability() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (isAvailable) => doctorAgent.setAvailability(isAvailable),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.doctor.profile() }),
+  });
+}
+
+/** Doctor asks to view the patient's adherence report — needs patient approval. */
+export function useRequestAdherenceReport() {
+  return useMutation({
+    mutationFn: (sessionId) => doctorAgent.requestAdherenceReport(sessionId),
+  });
+}
+
+/** Patient approves/denies an adherence-report request. */
+export function useRespondAdherenceRequest() {
+  return useMutation({
+    mutationFn: ({ sessionId, requestId, approved }) =>
+      doctorAgent.respondAdherenceRequest(sessionId, requestId, approved),
   });
 }

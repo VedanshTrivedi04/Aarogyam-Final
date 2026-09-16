@@ -41,6 +41,7 @@ class NotificationType(models.TextChoices):
     AI_INSIGHT            = 'AI_INSIGHT',            'AI Insight'
     AI_ADHERENCE_NUDGE    = 'AI_ADHERENCE_NUDGE',    'AI Adherence Nudge'
     AI_ADHERENCE_REMINDER = 'AI_ADHERENCE_REMINDER', 'AI Adherence Reminder'
+    CONSULTATION_PRESCRIPTION = 'CONSULTATION_PRESCRIPTION', 'Consultation Prescription'
 
 
 # ─── In-App Notification (always stored regardless of channel) ────────────────

@@ -13,9 +13,9 @@ class DoctorProfileSerializer(serializers.ModelSerializer):
             'registration_number', 'specialization', 'hospital_name',
             'is_verified', 'verified_at',
             'experience_years', 'rating', 'review_count',
-            'consultation_fee', 'is_available', 'next_slot', 'languages',
+            'consultation_fee', 'is_available', 'is_online', 'next_slot', 'languages',
         ]
-        read_only_fields = ['id', 'user', 'is_verified', 'verified_at']
+        read_only_fields = ['id', 'user', 'is_verified', 'verified_at', 'is_online']
 
     def get_full_name(self, obj):
         try:
@@ -68,16 +68,18 @@ class DoctorPatientLinkSerializer(serializers.ModelSerializer):
 class DigitalPrescriptionSerializer(serializers.ModelSerializer):
     doctor_name  = serializers.SerializerMethodField()
     patient_name = serializers.SerializerMethodField()
+    # Optional: server fills this in from instruction_points when omitted (see views.perform_create)
+    instructions = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model  = DigitalPrescription
         fields = [
             'id', 'doctor', 'doctor_name',
             'patient', 'patient_name',
-            'medication_name', 'dosage', 'instructions',
+            'medication_name', 'dosage', 'instructions', 'instruction_points',
             'start_date', 'end_date', 'notes',
             'compartment_number', 'current_pill_count',
-            'is_accepted', 'accepted_at',
+            'is_accepted', 'accepted_at', 'session',
             'converted_prescription',
             'created_at',
         ]
@@ -96,7 +98,7 @@ class ConsultationMessageSerializer(serializers.ModelSerializer):
         model  = ConsultationMessage
         fields = [
             'id', 'session', 'sender', 'sender_name',
-            'content', 'type',
+            'content', 'type', 'metadata',
             'file_url', 'file_name', 'file_size', 'mime_type',
             'created_at', 'is_own',
         ]

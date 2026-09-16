@@ -11,12 +11,22 @@ const ICE_SERVERS = [
 ];
 
 /**
- * useCallSocket(roomId, { onCallEnded, onCallStarted })
+ * useCallSocket(roomId, { onCallEnded, onCallStarted, onCallError, wsPath, video, peerInfo })
  * Manages WebRTC signaling via Django Channels.
- * Returns: { callState, startCall, answerCall, endCall, localStream, remoteStream }
+ *
+ * - `wsPath`: which signaling channel to use — 'call' (caregiver<->patient,
+ *   default) or 'doctor-call' (doctor<->patient, gated on doctor
+ *   availability/presence server-side).
+ * - `video`: request a camera track in addition to the mic (voice-only when false).
+ * - `onCallError`: called with { reason } if the server rejects the call
+ *   (e.g. 'doctor_unavailable') instead of relaying it.
+ *
+ * Returns: { callState, startCall, answerCall, endCall, localStream, remoteStream, peerInfo }
  * callState: 'idle' | 'ringing' | 'active' | 'ended'
  */
-export function useCallSocket(roomId, { onCallEnded, onCallStarted } = {}) {
+export function useCallSocket(roomId, {
+  onCallEnded, onCallStarted, onCallError, wsPath = 'call', video = false,
+} = {}) {
   const token = useAuthStore((s) => s.accessToken);
   const user  = useAuthStore((s) => s.user);
 
@@ -24,6 +34,7 @@ export function useCallSocket(roomId, { onCallEnded, onCallStarted } = {}) {
   const [localStream,  setLocalStream]  = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
   const [isConnected,  setIsConnected]  = useState(false);
+  const [peerInfo,     setPeerInfo]     = useState(null);
 
   const wsRef  = useRef(null);
   const pcRef  = useRef(null);  // RTCPeerConnection
@@ -42,7 +53,7 @@ export function useCallSocket(roomId, { onCallEnded, onCallStarted } = {}) {
   useEffect(() => {
     if (!roomId || !token) return;
 
-    const url = `${WS_BASE}/ws/call/${roomId}/?token=${token}`;
+    const url = `${WS_BASE}/ws/${wsPath}/${roomId}/?token=${token}`;
     const ws  = new WebSocket(url);
     wsRef.current = ws;
 
@@ -57,7 +68,7 @@ export function useCallSocket(roomId, { onCallEnded, onCallStarted } = {}) {
     };
 
     return () => ws.close();
-  }, [roomId, token]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [roomId, token, wsPath]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const send = useCallback((payload) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -89,7 +100,17 @@ export function useCallSocket(roomId, { onCallEnded, onCallStarted } = {}) {
   const handleSignal = useCallback(async (data) => {
     switch (data.type) {
       case 'peer_joined':
-        // Other party connected — if we're the caller, nothing yet; wait for offer
+        // Other party connected — carries their profile details (see
+        // DoctorCallConsumer._peer_join_info) so the ringing screen can show
+        // who's calling before the offer/answer even happens.
+        if (data.patient || data.doctor) {
+          setPeerInfo(data.patient || data.doctor);
+        }
+        break;
+
+      case 'call_error':
+        setCallState('idle');
+        onCallError?.({ reason: data.reason });
         break;
 
       case 'call_offer': {
@@ -125,13 +146,13 @@ export function useCallSocket(roomId, { onCallEnded, onCallStarted } = {}) {
       default:
         break;
     }
-  }, [cleanup, onCallEnded, onCallStarted]);
+  }, [cleanup, onCallEnded, onCallStarted, onCallError]);
 
   // ── Public API ────────────────────────────────────────────────────────────
 
   const startCall = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video });
       setLocalStream(stream);
       const pc = createPeerConnection(stream);
 
@@ -143,14 +164,14 @@ export function useCallSocket(roomId, { onCallEnded, onCallStarted } = {}) {
       console.error('startCall failed:', err);
       cleanup();
     }
-  }, [createPeerConnection, send, cleanup]);
+  }, [createPeerConnection, send, cleanup, video]);
 
   const answerCall = useCallback(async () => {
     try {
       const pendingOffer = pcRef._pendingOffer;
       if (!pendingOffer) return;
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video });
       setLocalStream(stream);
       const pc = createPeerConnection(stream);
 
@@ -165,7 +186,7 @@ export function useCallSocket(roomId, { onCallEnded, onCallStarted } = {}) {
       console.error('answerCall failed:', err);
       cleanup();
     }
-  }, [createPeerConnection, send, cleanup, onCallStarted]);
+  }, [createPeerConnection, send, cleanup, onCallStarted, video]);
 
   const endCall = useCallback(() => {
     send({ type: 'call_end' });
@@ -178,6 +199,7 @@ export function useCallSocket(roomId, { onCallEnded, onCallStarted } = {}) {
     isConnected,
     localStream,
     remoteStream,
+    peerInfo,
     startCall,
     answerCall,
     endCall,

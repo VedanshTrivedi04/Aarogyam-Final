@@ -28,21 +28,27 @@ void handleRemoteCommand(const char* type, const char* payloadJson) {
     String pj = String(payloadJson);
 
     int comp = 1;
-    // Check if compartment specified in the command payload
-    int cIdx = pj.indexOf("\"compartment\":");
-    if (cIdx >= 0) {
-        comp = pj.substring(cIdx + 14, cIdx + 16).toInt();
-        if (comp < 1 || comp > TOTAL_COMPARTMENTS) comp = 1;
+    // Check if compartment specified in the command payload.
+    // The caregiver app's fill-mode UI sends "compartment_number" (PREPARE_COMPARTMENT),
+    // while dispense-trigger commands send "compartment" — check both.
+    int cnIdx = pj.indexOf("\"compartment_number\":");
+    if (cnIdx >= 0) {
+        comp = pj.substring(cnIdx + 21, cnIdx + 23).toInt();
+    } else {
+        int cIdx = pj.indexOf("\"compartment\":");
+        if (cIdx >= 0) {
+            comp = pj.substring(cIdx + 14, cIdx + 16).toInt();
+        }
     }
+    if (comp < 1 || comp > TOTAL_COMPARTMENTS) comp = 1;
 
-    if (cmd.indexOf("START_FILL_MODE") >= 0) {
-        Serial.printf("[FILL] Fill mode started at Compartment %d. Opening lid...\n", comp);
+    if (cmd.indexOf("START_FILL_MODE") >= 0 || cmd.indexOf("NEXT_COMPARTMENT") >= 0 ||
+        cmd.indexOf("PREPARE_COMPARTMENT") >= 0) {
+        // Caregiver app sends PREPARE_COMPARTMENT for both the first slot and
+        // every subsequent one, so always close-rotate-open: harmless if the
+        // lid is already closed, and correct whichever step this is.
+        Serial.printf("[FILL] Preparing Compartment %d for filling...\n", comp);
         fillModeActive = true;
-        rotateToCompartment(comp);
-        openServo();
-    }
-    else if (cmd.indexOf("NEXT_COMPARTMENT") >= 0) {
-        Serial.printf("[FILL] Moving to Compartment %d...\n", comp);
         closeServo();
         delay(500); // let the gate physically settle before rotating
         rotateToCompartment(comp);

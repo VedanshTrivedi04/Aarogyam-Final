@@ -9,6 +9,11 @@ class DoctorAgent extends AgentBase {
     return this._get(api.get(`${DOCTOR_BASE}/profiles/`));
   }
 
+  /** POST /profiles/availability/ — doctor toggles "accepting calls/consults" */
+  async setAvailability(isAvailable) {
+    return this._post(api.post(`${DOCTOR_BASE}/profiles/availability/`, { is_available: isAvailable }));
+  }
+
   async getLinkedPatients() {
     return this._get(api.get(`${DOCTOR_BASE}/links/`));
   }
@@ -74,6 +79,18 @@ class DoctorAgent extends AgentBase {
   /** GET /consultations/{id}/messages/ — full chat history */
   async getConsultationMessages(sessionId) {
     return this._get(api.get(`${DOCTOR_BASE}/consultations/${sessionId}/messages/`));
+  }
+
+  /** POST /consultations/{id}/request-adherence/ — doctor asks to view the report */
+  async requestAdherenceReport(sessionId) {
+    return this._post(api.post(`${DOCTOR_BASE}/consultations/${sessionId}/request-adherence/`));
+  }
+
+  /** POST /consultations/{id}/respond-adherence/ — patient approves/denies */
+  async respondAdherenceRequest(sessionId, requestId, approved) {
+    return this._post(api.post(`${DOCTOR_BASE}/consultations/${sessionId}/respond-adherence/`, {
+      request_id: requestId, approved,
+    }));
   }
 
   // ── All verified doctors (for patient to browse) ──────────────────────────
