@@ -1,17 +1,21 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Trophy, Star, Shield, Award, Zap, Activity, Flame, Medal } from 'lucide-react';
+import { Trophy, Flame, Medal } from 'lucide-react';
 import { useGamificationSummary, useBadges, useScores } from '@/hooks/useGamification';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { GamificationWidget } from '@/components/patient/GamificationWidget';
 
 export default function Rewards() {
+  const { data: summary } = useGamificationSummary();
   const { data: badgesData, isLoading: badgesLoading } = useBadges();
   const { data: scoresData, isLoading: scoresLoading } = useScores();
 
-  const badges = badgesData?.data || [];
-  const scores = scoresData?.data || [];
+  // useBadges()/useScores() already resolve to the unwrapped array
+  // (see AgentBase._call) — not a { data: [...] } wrapper.
+  const badges = badgesData || [];
+  const scores = scoresData || [];
+  const streak = summary?.streak || {};
 
   return (
     <div className="flex flex-col gap-8 py-6 max-w-5xl mx-auto">
@@ -30,25 +34,27 @@ export default function Rewards() {
             <CardContent className="p-6 flex flex-col justify-center h-full">
               <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                 <Flame className="w-5 h-5 text-orange-500" />
-                Current Active Challenges
+                Streak Progress
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-4 rounded-xl border border-border/50 bg-background flex gap-4 items-center">
-                  <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center text-orange-500 shrink-0">
-                    <Zap className="w-6 h-6" />
+                  <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center text-orange-500 shrink-0 text-xl font-bold">
+                    {streak.current_days ?? 0}
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm">7-Day Perfect Streak</h4>
-                    <p className="text-xs text-muted-foreground mt-1">Take all meds on time for 7 days. (5/7 days)</p>
+                    <h4 className="font-bold text-sm">Current Streak</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {streak.current_days ? `${streak.current_days} day${streak.current_days === 1 ? '' : 's'} in a row` : 'Take a dose today to start a streak'}
+                    </p>
                   </div>
                 </div>
                 <div className="p-4 rounded-xl border border-border/50 bg-background flex gap-4 items-center">
-                  <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-500 shrink-0">
-                    <Activity className="w-6 h-6" />
+                  <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-500 shrink-0 text-xl font-bold">
+                    {streak.longest_days ?? 0}
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm">Health Explorer</h4>
-                    <p className="text-xs text-muted-foreground mt-1">Log 3 vital readings this week. (1/3 logged)</p>
+                    <h4 className="font-bold text-sm">Best Streak</h4>
+                    <p className="text-xs text-muted-foreground mt-1">Your longest streak so far</p>
                   </div>
                 </div>
               </div>
@@ -86,10 +92,8 @@ export default function Rewards() {
               >
                 <Card className="h-full border-border/40 hover:border-primary/40 transition-colors hover:shadow-md cursor-pointer group text-center">
                   <CardContent className="p-5 flex flex-col items-center gap-3">
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-yellow-100 to-yellow-200 border border-yellow-300 flex items-center justify-center group-hover:scale-110 transition-transform shadow-inner">
-                      {badge.icon === 'star' ? <Star className="w-8 h-8 text-yellow-600 fill-yellow-600" /> :
-                       badge.icon === 'shield' ? <Shield className="w-8 h-8 text-yellow-600" /> :
-                       <Award className="w-8 h-8 text-yellow-600" />}
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-yellow-100 to-yellow-200 border border-yellow-300 flex items-center justify-center group-hover:scale-110 transition-transform shadow-inner text-3xl">
+                      {badge.icon || '🏅'}
                     </div>
                     <div>
                       <h4 className="font-bold text-sm leading-tight text-foreground">{badge.name}</h4>
@@ -125,11 +129,11 @@ export default function Rewards() {
                       </div>
                       <div>
                         <h4 className="font-bold text-sm">Week of {new Date(score.week_start).toLocaleDateString()}</h4>
-                        <p className="text-xs text-muted-foreground">Completed {score.doses_taken} / {score.doses_total} doses</p>
+                        <p className="text-xs text-muted-foreground">Completed {score.taken_doses} / {score.total_doses} doses</p>
                       </div>
                     </div>
                     <Badge variant="primary" className="text-sm px-3 py-1">
-                      {score.points_earned} Points
+                      {score.score}%
                     </Badge>
                   </div>
                 ))}

@@ -155,8 +155,8 @@ def handle_heartbeat(device: Device, event: DeviceEvent, payload: dict) -> dict:
     # Low battery check
     if battery < 15:
         try:
-            from agenthandover import AgentOrchestrator, AgentName, AgentEvent, HandoverPayload
-            orchestrator = AgentOrchestrator()
+            from agenthandover import get_orchestrator, AgentName, AgentEvent, HandoverPayload
+            orchestrator = get_orchestrator()
             orchestrator.broadcast(
                 AgentName.IOT,
                 AgentEvent.DEVICE_LOW_BATTERY,
@@ -325,8 +325,8 @@ def handle_dose_taken(device: Device, event: DeviceEvent, payload: dict) -> dict
 
     adherence_event = None
     try:
-        from agenthandover import AgentOrchestrator, AgentName, AgentEvent, HandoverPayload
-        orchestrator = AgentOrchestrator()
+        from agenthandover import get_orchestrator, AgentName, AgentEvent, HandoverPayload
+        orchestrator = get_orchestrator()
         hp = HandoverPayload(
             patient_id=str(device.linked_patient_id) if device.linked_patient_id else None,
             prescription_id=str(mapping.prescription_id),
@@ -365,8 +365,8 @@ def handle_dose_timeout(device: Device, event: DeviceEvent, payload: dict) -> di
         return {'error': 'no_mapping'}
 
     try:
-        from agenthandover import AgentOrchestrator, AgentName, AgentEvent, HandoverPayload
-        orchestrator = AgentOrchestrator()
+        from agenthandover import get_orchestrator, AgentName, AgentEvent, HandoverPayload
+        orchestrator = get_orchestrator()
         hp = HandoverPayload(
             patient_id=str(device.linked_patient_id) if device.linked_patient_id else None,
             prescription_id=str(mapping.prescription_id),
@@ -394,8 +394,8 @@ def handle_dose_skipped(device: Device, event: DeviceEvent, payload: dict) -> di
         return {'error': 'no_mapping'}
 
     try:
-        from agenthandover import AgentOrchestrator, AgentName, AgentEvent, HandoverPayload
-        orchestrator = AgentOrchestrator()
+        from agenthandover import get_orchestrator, AgentName, AgentEvent, HandoverPayload
+        orchestrator = get_orchestrator()
         hp = HandoverPayload(
             patient_id=str(device.linked_patient_id) if device.linked_patient_id else None,
             prescription_id=str(mapping.prescription_id),

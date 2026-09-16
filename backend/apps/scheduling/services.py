@@ -267,17 +267,22 @@ class DoseLoggingService:
 
         # Broadcast
         try:
-            from agenthandover import get_orchestrator
-            get_orchestrator().broadcast('DOSE_LOGGED', {
-                'patient_id':      str(reminder_job.patient.user.id),
-                'prescription_id': str(rx.id),
-                'medication':      rx.medication.name,
-                'status':          status,
-                'taken_at':        log.taken_at.isoformat(),
-                'source':          source,
-            })
+            from agenthandover import get_orchestrator, AgentName, AgentEvent, HandoverPayload
+            get_orchestrator().broadcast(
+                AgentName.ADHERENCE, AgentEvent.DOSE_LOGGED,
+                HandoverPayload(
+                    patient_id=str(reminder_job.patient_id),
+                    prescription_id=str(rx.id),
+                    data={
+                        'medication': rx.medication.name,
+                        'status':     status,
+                        'taken_at':   log.taken_at.isoformat(),
+                        'source':     source,
+                    },
+                ),
+            )
         except Exception:
-            pass
+            logger.warning('Orchestrator broadcast failed for DOSE_LOGGED', exc_info=True)
 
         return log
 
