@@ -22,6 +22,11 @@ import {
   MapPin,
   X,
   PhoneCall,
+  Brain,
+  Sparkles,
+  Activity,
+  Trophy,
+  Users,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -251,11 +256,11 @@ const DoseCard = ({ time, name, dosage, status, isWithinWindow, onTake, onDispen
       )}
     </div>
     {status === 'pending' || status === 'snoozed' ? (
-      <div className="flex flex-col gap-2 shrink-0">
-        <Button variant="secondary" size="sm" onClick={onTake} className="rounded-lg h-9 px-4 text-xs font-bold uppercase tracking-wider">
+      <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
+        <Button variant="secondary" size="sm" onClick={onTake} className="rounded-lg h-9 px-3.5 text-xs font-bold uppercase tracking-wider">
           Mark Taken
         </Button>
-        <Button variant="outline" size="sm" onClick={onDispenseNow} className="rounded-lg h-9 px-4 text-xs font-bold uppercase tracking-wider border-primary/40 text-primary">
+        <Button variant="outline" size="sm" onClick={onDispenseNow} className="rounded-lg h-9 px-3.5 text-xs font-bold uppercase tracking-wider border-primary/40 text-primary hover:bg-primary/10">
           Take Medicine Now
         </Button>
       </div>
@@ -311,7 +316,7 @@ export default function PatientDashboard() {
   const { data: recommendationsData, isLoading: isRecsLoading } = useRecommendations('me');
   const { data: agentActivityData, isLoading: isAgentActivityLoading } = useAgentActivity('me');
   const [sosOpen, setSosOpen] = React.useState(false);
-
+  const [scheduleFilter, setScheduleFilter] = React.useState('all'); // 'all' | 'pending' | 'taken'
 
   // 4 fixed meal slots — matches caregiver compartment times
   const MEAL_SLOTS = [
@@ -363,6 +368,10 @@ export default function PatientDashboard() {
     });
   }, [scheduleData]);
 
+  const allCount = doses.length;
+  const pendingCount = React.useMemo(() => doses.filter(d => d.status === 'pending' || d.status === 'snoozed').length, [doses]);
+  const takenCount = React.useMemo(() => doses.filter(d => d.status === 'taken').length, [doses]);
+
   const activePrescriptions = React.useMemo(() => prescriptions.filter((rx) => rx.is_active !== false), [prescriptions]);
   const nextRefill = React.useMemo(() => {
     const ordered = [...activePrescriptions]
@@ -388,27 +397,27 @@ export default function PatientDashboard() {
   };
 
   return (
-    <div className="flex flex-col gap-8 py-4">
+    <div className="flex flex-col gap-8 py-4 max-w-[1600px] mx-auto w-full">
       <SOSModal open={sosOpen} onClose={() => setSosOpen(false)} />
 
       {/* Top Banner: Greeting + Quick Stats */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2 bg-primary text-white overflow-hidden relative">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+        <Card className="lg:col-span-2 bg-primary text-white overflow-hidden relative shadow-elevation-1">
           <div className="absolute right-0 top-0 w-64 h-64 bg-white/10 rounded-full translate-x-1/2 -translate-y-1/2 blur-3xl" />
-          <CardContent className="p-8 relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
+          <CardContent className="p-8 relative z-10 flex flex-col md:flex-row justify-between items-center gap-6 h-full">
             <div className="flex flex-col gap-2 text-center md:text-left">
               <h2 className="text-3xl font-display font-bold">Good Morning, {user?.full_name?.split(' ')[0] || 'Guest'}! 🎉</h2>
-              <p className="text-primary-foreground/80 font-medium">You have {doses.filter(d => d.status === 'pending').length} doses remaining for today. Keep up the momentum!</p>
+              <p className="text-primary-foreground/80 font-medium">You have {pendingCount} doses remaining for today. Keep up the momentum!</p>
               <div className="flex flex-wrap gap-4 mt-4 justify-center md:justify-start">
-                <Link to="/dashboard/medicines">
+                <Link to="/patient/medicines">
                   <Button variant="accent" className="rounded-full shadow-lg"><Plus className="w-4 h-4 mr-2" /> Add Medicine</Button>
                 </Link>
-                <Link to="/dashboard/reports">
+                <Link to="/patient/reports">
                   <Button variant="ghost" className="rounded-full text-white hover:bg-white/10"><TrendingUp className="w-4 h-4 mr-2" /> View Growth</Button>
                 </Link>
               </div>
             </div>
-            <div className="flex items-center gap-6 bg-white/10 backdrop-blur-md p-6 rounded-2xl border border-white/20">
+            <div className="flex items-center gap-6 bg-white/10 backdrop-blur-md p-6 rounded-2xl border border-white/20 shrink-0">
               <div className="text-center">
                 <h3 className="text-3xl font-display font-bold">{streakData?.current_streak || 0}</h3>
                 <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Day Streak</p>
@@ -419,85 +428,159 @@ export default function PatientDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="border-accent/20 bg-accent/5">
-          <CardContent className="p-6 flex flex-col items-center gap-4 text-center">
+        <Card className="border-accent/20 bg-accent/5 shadow-elevation-1 h-full flex flex-col">
+          <CardContent className="p-6 flex flex-col items-center justify-between text-center h-full">
             <div className="flex items-center justify-between w-full mb-2">
               <h3 className="font-bold text-foreground">Health Adherence</h3>
               <Badge variant="warning">On Track</Badge>
             </div>
-            <AdherenceRing percentage={Math.round(adherenceData?.summary?.adherence_pct || 0)} />
+            <div className="my-auto py-2">
+              <AdherenceRing percentage={Math.round(adherenceData?.summary?.adherence_pct || 0)} />
+            </div>
             <p className="text-sm text-muted-foreground font-medium px-4">Your adherence score based on recent doses.</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Main Grid */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        {/* Left: Medication Timeline */}
-        <div className="xl:col-span-2 flex flex-col gap-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xl font-display font-bold flex items-center gap-2">
-              <Clock className="w-5 h-5 text-primary" /> Today's Schedule
-            </h3>
-            <div className="flex gap-2">
-              <Badge className="cursor-pointer">All</Badge>
-              <Badge variant="primary" className="cursor-pointer">Pending</Badge>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
+        {/* Left: Medication Timeline + AI Intelligence (xl:col-span-2) */}
+        <div className="xl:col-span-2 flex flex-col gap-8">
+          {/* Medication Schedule */}
+          <div className="flex flex-col gap-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <h3 className="text-xl font-display font-bold flex items-center gap-2">
+                <Clock className="w-5 h-5 text-primary" /> Today's Schedule
+              </h3>
+              <div className="flex items-center gap-1.5 bg-secondary/60 p-1 rounded-xl border border-border/40 w-fit">
+                <button
+                  type="button"
+                  onClick={() => setScheduleFilter('all')}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                    scheduleFilter === 'all'
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  All ({allCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScheduleFilter('pending')}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                    scheduleFilter === 'pending'
+                      ? 'bg-amber-500 text-white shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Pending ({pendingCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScheduleFilter('taken')}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                    scheduleFilter === 'taken'
+                      ? 'bg-success text-white shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Taken ({takenCount})
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              {MEAL_SLOTS.map(slot => {
+                const slotDoses = doses.filter(d => {
+                  if (d.slot !== slot.key) return false;
+                  if (scheduleFilter === 'pending') return d.status === 'pending' || d.status === 'snoozed';
+                  if (scheduleFilter === 'taken') return d.status === 'taken';
+                  return true;
+                });
+                const SlotIcon  = slot.Icon;
+                return (
+                  <div key={slot.key} className={`rounded-2xl border overflow-hidden ${slot.border} shadow-sm transition-all`}>
+                    {/* Slot header */}
+                    <div className={`flex items-center gap-3 px-5 py-3 ${slot.bg}`}>
+                      <div className={`w-8 h-8 rounded-xl ${slot.bg} flex items-center justify-center shrink-0`}>
+                        <SlotIcon className={`w-4 h-4 ${slot.color}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-xs font-extrabold uppercase tracking-widest ${slot.color}`}>{slot.label}</p>
+                        <p className="text-[10px] text-muted-foreground font-medium flex items-center gap-1 mt-0.5">
+                          <Clock className="w-3 h-3" /> {slot.time}
+                          <span className="mx-1">·</span>
+                          <Utensils className="w-3 h-3" /> {slot.with_food ? 'After food' : 'Before food'}
+                        </p>
+                      </div>
+                      {slotDoses.length > 0 && (
+                        <span className={`text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full ${slot.bg} ${slot.color}`}>
+                          {slotDoses.filter(d => d.status === 'pending' || d.status === 'snoozed').length} pending
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Medicines */}
+                    <div className="px-4 py-3 flex flex-col gap-2 bg-background">
+                      {isScheduleLoading ? (
+                        <div className="h-14 rounded-xl bg-muted animate-pulse" />
+                      ) : slotDoses.length === 0 ? (
+                        <p className="text-xs text-muted-foreground italic py-3 text-center">
+                          {scheduleFilter === 'pending'
+                            ? 'No pending medicines for this slot.'
+                            : scheduleFilter === 'taken'
+                            ? 'No completed medicines for this slot.'
+                            : 'No medicines scheduled for this slot.'}
+                        </p>
+                      ) : (
+                        slotDoses.map(dose => (
+                          <DoseCard
+                            key={dose.id}
+                            {...dose}
+                            isWithinWindow={dose.isWithinWindow}
+                            onTake={() => handleTake(dose.id)}
+                            onDispenseNow={() => handleDispenseNow(dose.id)}
+                          />
+                        ))
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          <div className="flex flex-col gap-5">
-            {MEAL_SLOTS.map(slot => {
-              const slotDoses = doses.filter(d => d.slot === slot.key);
-              const SlotIcon  = slot.Icon;
-              return (
-                <div key={slot.key} className={`rounded-2xl border overflow-hidden ${slot.border}`}>
-                  {/* Slot header */}
-                  <div className={`flex items-center gap-3 px-5 py-3 ${slot.bg}`}>
-                    <div className={`w-8 h-8 rounded-xl ${slot.bg} flex items-center justify-center shrink-0`}>
-                      <SlotIcon className={`w-4 h-4 ${slot.color}`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs font-extrabold uppercase tracking-widest ${slot.color}`}>{slot.label}</p>
-                      <p className="text-[10px] text-muted-foreground font-medium flex items-center gap-1 mt-0.5">
-                        <Clock className="w-3 h-3" /> {slot.time}
-                        <span className="mx-1">·</span>
-                        <Utensils className="w-3 h-3" /> {slot.with_food ? 'After food' : 'Before food'}
-                      </p>
-                    </div>
-                    {slotDoses.length > 0 && (
-                      <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${slot.bg} ${slot.color}`}>
-                        {slotDoses.filter(d => d.status === 'pending').length} pending
-                      </span>
-                    )}
-                  </div>
+          {/* AI Clinical Intelligence & Autonomous Care Suite */}
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-display font-bold flex items-center gap-2">
+                <Brain className="w-5 h-5 text-primary" /> AI Clinical Intelligence & Activity
+              </h3>
+              <Badge variant="outline" className="text-[11px] font-bold text-primary border-primary/30">
+                Live AI Assistant
+              </Badge>
+            </div>
 
-                  {/* Medicines */}
-                  <div className="px-4 py-3 flex flex-col gap-2 bg-background">
-                    {isScheduleLoading ? (
-                      <div className="h-14 rounded-xl bg-muted animate-pulse" />
-                    ) : slotDoses.length === 0 ? (
-                      <p className="text-xs text-muted-foreground italic py-3 text-center">No medicines for this slot.</p>
-                    ) : (
-                      slotDoses.map(dose => (
-                        <DoseCard
-                          key={dose.id}
-                          {...dose}
-                          isWithinWindow={dose.isWithinWindow}
-                          onTake={() => handleTake(dose.id)}
-                          onDispenseNow={() => handleDispenseNow(dose.id)}
-                        />
-                      ))
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+              <AIInsightsCard
+                riskData={riskData}
+                insights={insightsData}
+                recommendations={recommendationsData}
+                isLoading={isInsightsLoading || isRiskLoading}
+              />
+              <AgentActivityCard
+                activity={agentActivityData}
+                isLoading={isAgentActivityLoading}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Right: Alerts & Actions */}
+        {/* Right: Alerts & Quick Care Hub (xl:col-span-1) */}
         <div className="flex flex-col gap-6">
-          <h3 className="text-xl font-display font-bold">Health Insights</h3>
+          <h3 className="text-xl font-display font-bold flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-accent" /> Care Center
+          </h3>
 
           {/* SOS Button */}
           <motion.button
@@ -526,21 +609,10 @@ export default function PatientDashboard() {
             isLoading={isRiskLoading}
           />
 
-          {/* AI Behavioral Insights & Explainable Reasons */}
-          <AIInsightsCard
-            riskData={riskData}
-            insights={insightsData}
-            recommendations={recommendationsData}
-            isLoading={isInsightsLoading || isRiskLoading}
-          />
-
-          {/* AI Agent Activity */}
-          <AgentActivityCard activity={agentActivityData} isLoading={isAgentActivityLoading} />
-
           {/* Gamification Widget */}
           <GamificationWidget />
 
-
+          {/* Upcoming Refill Card */}
           <Card className="border-accent bg-accent/10 border-dashed">
             <CardContent className="p-6 flex items-start gap-4">
               <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center text-white shrink-0">
@@ -555,47 +627,79 @@ export default function PatientDashboard() {
                 ) : (
                   <p className="text-sm text-muted-foreground leading-snug">No active refill alerts right now.</p>
                 )}
-                <Link to="/dashboard/medicines">
-                  <Button variant="accent" size="sm" className="mt-3 w-fit h-8 text-xs font-bold uppercase tracking-wider rounded-lg">Order Refill</Button>
+                <Link to="/patient/medicines">
+                  <Button variant="accent" size="sm" className="mt-3 w-fit h-8 text-xs font-bold uppercase tracking-wider rounded-lg">
+                    Order Refill
+                  </Button>
                 </Link>
               </div>
             </CardContent>
           </Card>
 
+          {/* Consult Doctor */}
           <Link to="/consult-doctors">
-          <Card className="hover:border-primary/50 transition-colors cursor-pointer group">
-            <CardContent className="p-6 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center text-primary">
-                  <MessageSquare className="w-5 h-5" />
+            <Card className="hover:border-primary/50 transition-colors cursor-pointer group">
+              <CardContent className="p-4 sm:p-5 flex items-center justify-between">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center text-primary shrink-0">
+                    <MessageSquare className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-foreground">Consult Doctor</h4>
+                    <p className="text-xs text-muted-foreground">
+                      {primaryDoctorName ? `${primaryDoctorName} in network` : 'Connect with verified healthcare providers'}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-bold text-foreground">Consult Doctor</h4>
-                  <p className="text-xs text-muted-foreground">
-                    {primaryDoctorName ? `${primaryDoctorName} is in your care network` : 'Your care team will appear here after prescriptions are added'}
-                  </p>
-                </div>
-              </div>
-              <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
-            </CardContent>
-          </Card>
+                <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all shrink-0" />
+              </CardContent>
+            </Card>
           </Link>
 
+          {/* Caregiver & Family */}
+          <Link to="/patient/family">
+            <Card className="hover:border-primary/50 transition-colors cursor-pointer group">
+              <CardContent className="p-4 sm:p-5 flex items-center justify-between">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-sm text-foreground">Caregiver & Family</h4>
+                      <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Linked & active · Real-time adherence alerts
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all shrink-0" />
+              </CardContent>
+            </Card>
+          </Link>
+
+          {/* Quick Shortcuts (2x2 Grid) */}
           <Card className="bg-card">
             <CardContent className="p-6">
-              <h4 className="font-bold text-foreground mb-4">Quick Links</h4>
+              <h4 className="font-bold text-foreground mb-4">Quick Navigation</h4>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { name: 'Lab Results',    to: '/patient/reports' },
-                  { name: 'Prescriptions',  to: '/patient/medicines' },
-                  { name: 'Rewards',        to: '/patient/rewards' },
-                ].map(link => (
-                  <Link key={link.name} to={link.to}>
-                    <Button variant="outline" className="w-full justify-start px-4 h-10 text-xs font-semibold rounded-lg bg-background border-border/50">
-                      {link.name}
-                    </Button>
-                  </Link>
-                ))}
+                  { name: 'Prescriptions',     to: '/patient/medicines', icon: Pill },
+                  { name: 'Adherence Reports', to: '/patient/reports',   icon: TrendingUp },
+                  { name: 'Vitals Tracker',    to: '/patient/vitals',    icon: Activity },
+                  { name: 'Rewards Hub',       to: '/patient/rewards',   icon: Trophy },
+                ].map(link => {
+                  const Icon = link.icon;
+                  return (
+                    <Link key={link.name} to={link.to}>
+                      <Button variant="outline" className="w-full justify-start px-3 h-11 text-xs font-semibold rounded-xl bg-background border-border/50 hover:bg-secondary/60 hover:text-primary gap-2 transition-all">
+                        <Icon className="w-3.5 h-3.5 text-primary shrink-0" />
+                        <span className="truncate">{link.name}</span>
+                      </Button>
+                    </Link>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>

@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Aarogyam / MedAdhere — IoT Smart Pill Dispenser API Documentation</title>
+<style>
+  @page {
+    size: A4;
+    margin: 14mm 12mm 14mm 12mm;
+    @bottom-right {
+      content: counter(page);
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1e293b;
+    background-color: #ffffff;
+    line-height: 1.5;
+    font-size: 11.5px;
+    padding: 10px 14px;
+  }
+
+  .header-container {
+    border-bottom: 2.5px solid #0284c7;
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+  }
+
+  h1 {
+    font-size: 20px;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 4px;
+    letter-spacing: -0.5px;
+  }
+
+  .subtitle {
+    font-size: 11.5px;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  .badge-container {
+    margin-top: 8px;
+    display: flex;
+    gap: 6px;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    font-size: 9.5px;
+    font-weight: 700;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .badge-blue { background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+  .badge-green { background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+  .badge-purple { background-color: #f3e8ff; color: #7e22ce; border: 1px solid #e9d5ff; }
+
+  h2 {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: #0369a1;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 4px;
+    margin-top: 18px;
+    margin-bottom: 8px;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  h3 {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-top: 12px;
+    margin-bottom: 6px;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  p {
+    margin-bottom: 8px;
+    color: #334155;
+  }
+
+  ul, ol {
+    margin-left: 18px;
+    margin-bottom: 10px;
+    color: #334155;
+  }
+
+  li {
+    margin-bottom: 3px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 6px;
+    margin-bottom: 12px;
+    font-size: 10.5px;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  th {
+    background-color: #f1f5f9;
+    color: #0f172a;
+    font-weight: 700;
+    text-align: left;
+    padding: 5px 8px;
+    border: 1px solid #cbd5e1;
+  }
+
+  td {
+    padding: 5px 8px;
+    border: 1px solid #e2e8f0;
+    color: #334155;
+    vertical-align: top;
+  }
+
+  tr:nth-child(even) td {
+    background-color: #f8fafc;
+  }
+
+  code {
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 10.5px;
+    background-color: #f1f5f9;
+    color: #0369a1;
+    padding: 1px 4px;
+    border-radius: 3px;
+    border: 1px solid #e2e8f0;
+  }
+
+  pre {
+    background-color: #0f172a;
+    color: #f8fafc;
+    padding: 8px 10px;
+    border-radius: 4px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 10px;
+    line-height: 1.4;
+    overflow-x: auto;
+    margin-top: 4px;
+    margin-bottom: 8px;
+    border: 1px solid #1e293b;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  pre code {
+    background: none;
+    color: inherit;
+    padding: 0;
+    border: none;
+  }
+
+  .api-block {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-left: 3.5px solid #0284c7;
+    border-radius: 5px;
+    padding: 8px 11px;
+    margin-bottom: 10px;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .api-method-get {
+    display: inline-block;
+    background: #0284c7;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-right: 5px;
+  }
+
+  .api-method-post {
+    display: inline-block;
+    background: #16a34a;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-right: 5px;
+  }
+
+  .api-method-patch {
+    display: inline-block;
+    background: #d97706;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-right: 5px;
+  }
+
+  .api-url {
+    font-family: "Consolas", monospace;
+    font-weight: 700;
+    color: #0f172a;
+    font-size: 11.5px;
+  }
+
+  .flow-box {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    padding: 10px;
+    font-family: "Consolas", monospace;
+    font-size: 10px;
+    line-height: 1.45;
+    margin-top: 8px;
+    margin-bottom: 14px;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  footer {
+    margin-top: 20px;
+    border-top: 1px solid #cbd5e1;
+    padding-top: 8px;
+    font-size: 9.5px;
+    color: #94a3b8;
+    text-align: center;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+</style>
+</head>
+<body>
+
+<div class="header-container">
+  <h1>Aarogyam / MedAdhere — IoT Smart Pill Dispenser</h1>
+  <div class="subtitle">Complete Technical Specification, Firmware API Protocol & Hardware Architecture</div>
+  <div class="badge-container">
+    <span class="badge badge-blue">Firmware v3.2.0</span>
+    <span class="badge badge-green">Hardware v4.0</span>
+    <span class="badge badge-purple">Django Channels WebSocket</span>
+  </div>
+</div>
+
+<h2>1. System & Hardware Architecture</h2>
+<p>
+  The <strong>Aarogyam / MedAdhere IoT Smart Pill Dispenser</strong> is an autonomous, sensor-verified circular 4-compartment medication dispenser powered by an ESP32 microcontroller (or Arduino-compatible architecture). It operates in both <strong>fully autonomous offline mode</strong> (using an onboard DS3231 RTC and local NVS flash memory) and <strong>cloud-synchronized online mode</strong> via HTTP REST and real-time WebSockets.
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 25%;">Hardware Component</th>
+      <th style="width: 25%;">Interface / Pins</th>
+      <th style="width: 50%;">Operational & Physical Function</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Stepper Motor (28BYJ-48 + ULN2003)</strong></td>
+      <td>GPIO 13, 14, 27, 26</td>
+      <td>Drives 360° circular carousel. 1024 half-steps correspond precisely to 90° rotation per compartment.</td>
+    </tr>
+    <tr>
+      <td><strong>Servo Lid Gate (SG90 / MG90S)</strong></td>
+      <td>GPIO 25 (PWM)</td>
+      <td>Opens (90°) and closes (0°) the active compartment access aperture.</td>
+    </tr>
+    <tr>
+      <td><strong>Ultrasonic Sensor (HC-SR04)</strong></td>
+      <td>Trig: GPIO 19, Echo: GPIO 18</td>
+      <td>Detects patient hand proximity (≤ 15 cm) to trigger gate opening and record retrieval.</td>
+    </tr>
+    <tr>
+      <td><strong>Precision Load Cell (1 kg + HX711)</strong></td>
+      <td>DOUT: GPIO 35, SCK: GPIO 18</td>
+      <td>Reads sub-gram carousel weight before and after lid closure to verify pill removal.</td>
+    </tr>
+    <tr>
+      <td><strong>Real-Time Clock (DS3231)</strong></td>
+      <td>I2C: SDA 21, SCL 22 (0x68)</td>
+      <td>High-precision temperature-compensated RTC for autonomous schedule tracking without WiFi.</td>
+    </tr>
+    <tr>
+      <td><strong>OLED Display (SSD1306 128×64)</strong></td>
+      <td>I2C: SDA 21, SCL 22 (0x3C)</td>
+      <td>Renders medicine name, dosage instructions, time slot label, and system status.</td>
+    </tr>
+    <tr>
+      <td><strong>DFPlayer Mini MP3 Audio</strong></td>
+      <td>UART2: TX 17, RX 16</td>
+      <td>Voice audio guidance in Hindi/English (dose reminder, take medicine, taken, missed, unlock).</td>
+    </tr>
+    <tr>
+      <td><strong>Hall Effect Sensor</strong></td>
+      <td>GPIO 33</td>
+      <td>Detects carousel magnet for automatic homing to Compartment 1 reference index.</td>
+    </tr>
+    <tr>
+      <td><strong>Buzzer & Indicator LED</strong></td>
+      <td>Buzzer: GPIO 32, LED: GPIO 2</td>
+      <td>Multi-frequency chimes and visual blinking indicator during active dose windows.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>2. Authentication Protocol</h2>
+<p>
+  All communications between the IoT device and the cloud backend are strictly authenticated:
+</p>
+<ul>
+  <li><strong>HTTP REST Endpoints:</strong> Header <code>X-Device-Key: &lt;DEVICE_API_KEY&gt;</code> (Validated by <code>DeviceAPIKeyAuthentication</code>).</li>
+  <li><strong>WebSocket Channel:</strong> Query parameter <code>?device_key=&lt;DEVICE_API_KEY&gt;</code> (Validated by <code>DeviceKeyAuthMiddleware</code>).</li>
+</ul>
+
+<h2>3. Core Device Firmware APIs (Directly Called by Device)</h2>
+
+<div class="api-block">
+  <span class="api-method-get">GET</span>
+  <span class="api-url">/api/v1/iot/devices/{device_id}/config/</span>
+  <p style="margin-top: 4px;"><strong>Description:</strong> Fetches the master configuration bundle. The device caches this in NVS flash and drives scheduled alarms from the onboard DS3231 RTC autonomously.</p>
+  <pre><code>// Response (200 OK)
+{
+  "status": "success",
+  "data": {
+    "schedule_version": 4,
+    "device_id": "e214a30b-c919-4d23-b3f1-80557b756cdd",
+    "timezone": "Asia/Kolkata",
+    "server_time_local": "2026-09-16T08:00:00+05:30",
+    "total_weight_grams": 142.50,
+    "is_gate_locked": false,
+    "policy": {
+      "dose_window_minutes": 60, "catchup_window_minutes": 30,
+      "max_gate_opens": 4, "weight_settle_ms": 3000, "hand_detect_cm": 15
+    },
+    "compartments": [
+      {
+        "compartment_number": 1,
+        "time_slot": "morning_before", "time": "08:00", "enabled": true,
+        "content_weight_grams": 35.50, "expected_dose_reduction_grams": 1.25,
+        "display_text": "Paracetamol 500mg\n1 Tab (Before Food)",
+        "voice_text": "Dawai lene ka waqt ho gaya hai. Kripya Paracetamol lijiye.",
+        "medicines": [{"medicine_uuid": "3fa8...", "name": "Paracetamol", "pill_weight_grams": 0.625, "qty_per_dose": 2}]
+      }
+    ]
+  }
+}</code></pre>
+</div>
+
+<div class="api-block">
+  <span class="api-method-get">GET</span>
+  <span class="api-url">/api/v1/iot/sync/time/</span>
+  <p style="margin-top: 4px;"><strong>Description:</strong> Returns accurate Unix epoch and UTC/ISO timestamps to synchronize and calibrate the DS3231 RTC register on boot and drift detection.</p>
+  <pre><code>// Response (200 OK)
+{
+  "status": "success",
+  "data": {
+    "unix_timestamp": 1789504215,
+    "iso_time": "2026-09-15T20:30:15.123456Z",
+    "utc_offset_seconds": 0
+  }
+}</code></pre>
+</div>
+
+<div class="api-block">
+  <span class="api-method-post">POST</span>
+  <span class="api-url">/api/v1/iot/heartbeat/</span>
+  <p style="margin-top: 4px;"><strong>Description:</strong> Periodic health beacon (5–10 mins). Records battery percentage, sensor statuses, and checks schedule version reconciliation.</p>
+  <pre><code>// Request Body
+{
+  "device_id": "e214a30b-c919-4d23-b3f1-80557b756cdd",
+  "battery_level": 92, "firmware_version": "3.2.0-ino", "wifi_strength": -58,
+  "stepper_status": "ok", "servo_status": "ok", "ultrasonic_status": "ok",
+  "rtc_time": "2026-09-16T08:00:00", "schedule_version": 3
+}
+
+// Response (200 OK)
+{
+  "status": "success",
+  "data": {
+    "server_unix_time": 1789504200, "schedule_version": 4,
+    "config_stale": true, "gate_locked": false, "rtc_drift_seconds": 1
+  }
+}</code></pre>
+</div>
+
+<div class="api-block">
+  <span class="api-method-post">POST</span>
+  <span class="api-url">/api/v1/iot/events/</span>
+  <p style="margin-top: 4px;"><strong>Description:</strong> Emits real-time hardware, dispensing, and adherence events. Idempotent per <code>event_uuid</code>.</p>
+  <pre><code>// Request Body
+{
+  "event_uuid": "c56d0e92-3482-4f32-a5d6-d0a92e106df2",
+  "event_type": "DOSE_TAKEN", "compartment_num": 1, "medicine": "Paracetamol",
+  "dose": 1, "occurred_at": "2026-09-16T08:02:15+05:30", "device_id": "e214a30b-c919-4d23-b3f1-80557b756cdd"
+}
+
+// Response (200 OK / 201 Created)
+{
+  "status": "success",
+  "data": {"status": "accepted", "adherence_event_id": "9a6e1189-9821-4f81-9b63-07bf653068e1"}
+}</code></pre>
+</div>
+
+<div class="api-block">
+  <span class="api-method-post">POST</span>
+  <span class="api-url">/api/v1/iot/events/batch/</span>
+  <p style="margin-top: 4px;"><strong>Description:</strong> Flushes offline NVS flash event queue when WiFi reconnects. Preserves original RTC timestamps (<code>occurred_at</code>).</p>
+  <pre><code>// Request Body
+{
+  "events": [
+    {"event_uuid": "1b9d...", "event_type": "DOSE_STARTED", "compartment_num": 1, "occurred_at": "2026-09-16T08:00:02+05:30"},
+    {"event_uuid": "550e...", "event_type": "DOSE_TAKEN", "compartment_num": 1, "occurred_at": "2026-09-16T08:01:45+05:30"}
+  ]
+}</code></pre>
+</div>
+
+<div class="api-block">
+  <span class="api-method-post">POST</span>
+  <span class="api-url">/api/v1/iot/events/weight-reading/</span>
+  <p style="margin-top: 4px;"><strong>Description:</strong> Transmits raw settled load cell measurement after lid closes. Backend verifies whether ΔW matches prescribed reduction.</p>
+  <pre><code>// Request Body: {"compartment_number": 1, "weight_grams": 84.15, "session_uuid": "b0f7..."}
+// Response (200 OK)
+{
+  "status": "success",
+  "data": {
+    "dose_status": "taken", "actual_reduction_grams": 1.25,
+    "expected_reduction_grams": 1.25, "is_valid": true, "gate_locked": false
+  }
+}</code></pre>
+</div>
+
+<div class="api-block">
+  <span class="api-method-post">POST</span>
+  <span class="api-url">/api/v1/iot/devices/{device_id}/fill/measure/</span>
+  <p style="margin-top: 4px;"><strong>Description:</strong> Guided refill mode. Reports total carousel weight to calculate exact per-pill weight: <code>(total - previous) / pills</code>.</p>
+  <pre><code>// Request Body: {"compartment_number": 1, "total_weight_grams": 145.8, "medicine_id": "3fa8..."}
+// Response (200 OK)
+{
+  "status": "success",
+  "data": {
+    "compartment_number": 1, "derived_weight_grams": 25.40,
+    "pill_weight_grams": 0.8467, "schedule_version": 5
+  }
+}</code></pre>
+</div>
+
+<div class="api-block">
+  <span class="api-method-get">GET</span>
+  <span class="api-url">/api/v1/iot/devices/{device_id}/commands/</span>
+  <p style="margin-top: 4px;"><strong>Description:</strong> HTTP polling fallback for remote caregiver commands (sorted with HIGH priority commands first).</p>
+  <pre><code>// Response (200 OK)
+{
+  "status": "success",
+  "data": {
+    "commands": [
+      {"command_id": "f5e4...", "type": "DISPENSE_NOW", "payload": {"compartment": 2, "priority": "HIGH"}}
+    ]
+  }
+}</code></pre>
+</div>
+
+<h2>4. Real-Time WebSocket Channel</h2>
+<p>
+  <strong>Connection URL:</strong> <code>ws://&lt;BACKEND_HOST&gt;:&lt;PORT&gt;/ws/iot/device/&lt;DEVICE_ID&gt;/?device_key=&lt;DEVICE_API_KEY&gt;</code>
+</p>
+<table>
+  <thead>
+    <tr>
+      <th style="width: 20%;">Direction</th>
+      <th style="width: 20%;">Frame Type</th>
+      <th style="width: 60%;">Payload Schema</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Device &rarr; Server</td>
+      <td><code>ping</code></td>
+      <td><code>{"type": "ping"}</code> (Sent every 30 seconds)</td>
+    </tr>
+    <tr>
+      <td>Server &rarr; Device</td>
+      <td><code>pong</code></td>
+      <td><code>{"type": "pong", "server_unix_time": 1789504220}</code></td>
+    </tr>
+    <tr>
+      <td>Server &rarr; Device</td>
+      <td><code>command</code></td>
+      <td><code>{"type": "command", "command_id": "...", "command_type": "TRIGGER_DOSE", "payload": {"compartment": 1}}</code></td>
+    </tr>
+    <tr>
+      <td>Device &rarr; Server</td>
+      <td><code>ack</code></td>
+      <td><code>{"type": "ack", "command_id": "..."}</code> (Acknowledges execution)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>5. Event Catalog & Hardware Action Table</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Event Name</th>
+      <th>Trigger Condition</th>
+      <th>Hardware Reaction & Backend Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>DEVICE_BOOT</code></td>
+      <td>ESP32 power up or reset</td>
+      <td>Performs sensor self-test, homes carousel, requests daily schedule bundle.</td>
+    </tr>
+    <tr>
+      <td><code>DOSE_STARTED</code></td>
+      <td>RTC slot time match (IST)</td>
+      <td>Rotates stepper to target slot, tare reads load cell baseline, rings buzzer.</td>
+    </tr>
+    <tr>
+      <td><code>HAND_DETECTED</code></td>
+      <td>Ultrasonic sensor &le; 15 cm</td>
+      <td>Opens servo lid (90°), displays prompt on OLED, plays audio track.</td>
+    </tr>
+    <tr>
+      <td><code>LID_CLOSED</code></td>
+      <td>Hand withdrawn from slot</td>
+      <td>Closes servo lid (0°), waits 3s weight stabilization, triggers scale reading.</td>
+    </tr>
+    <tr>
+      <td><code>WEIGHT_READING</code></td>
+      <td>Post-dose load cell read</td>
+      <td>Backend validates ΔW against expected reduction; marks session taken/partial.</td>
+    </tr>
+    <tr>
+      <td><code>DOSE_TAKEN</code></td>
+      <td>Intake verified</td>
+      <td>Decrements pill count in DB inventory, plays confirmation chime, notifies caregiver.</td>
+    </tr>
+    <tr>
+      <td><code>DOSE_MISSED</code></td>
+      <td>60-min window elapsed</td>
+      <td>Locks gate, triggers caregiver escalation notifications via Twilio & FCM.</td>
+    </tr>
+    <tr>
+      <td><code>LOW_BATTERY</code></td>
+      <td>Battery level &lt; 15%</td>
+      <td>Logs critical power telemetry, alerts caregiver to plug in USB-C charger.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>6. Remote Commands Catalog</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Command Name</th>
+      <th>Parameters</th>
+      <th>Physical Hardware Execution</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>DISPENSE_NOW</code> / <code>TRIGGER_DOSE</code></td>
+      <td><code>{"compartment": 1}</code></td>
+      <td>Immediately rotates stepper to compartment, plays voice prompt, and dispenses medicine.</td>
+    </tr>
+    <tr>
+      <td><code>START_FILL_MODE</code></td>
+      <td><code>{"compartment": 1, "medication_name": "Aspirin"}</code></td>
+      <td>Rotates to slot 1, opens lid, displays medicine name on OLED, prepares scale for refill.</td>
+    </tr>
+    <tr>
+      <td><code>NEXT_COMPARTMENT</code></td>
+      <td><code>{"compartment": 2, "medication_name": "Vitamin C"}</code></td>
+      <td>Closes lid, pauses 500ms, rotates stepper to slot 2, and re-opens lid.</td>
+    </tr>
+    <tr>
+      <td><code>END_FILL_MODE</code></td>
+      <td><code>{}</code></td>
+      <td>Closes lid, chimes 3 times, locks in expected baseline weights, exits fill mode.</td>
+    </tr>
+    <tr>
+      <td><code>READ_FILL_WEIGHT</code></td>
+      <td><code>{"medicine_id": "...", "compartment_number": 1}</code></td>
+      <td>Settles scale for 3 seconds, reads HX711 grams, and posts reading to backend.</td>
+    </tr>
+    <tr>
+      <td><code>GATE_LOCK</code></td>
+      <td><code>{}</code></td>
+      <td>Closes lid immediately, sets locked flag, plays missed dose audio.</td>
+    </tr>
+    <tr>
+      <td><code>GATE_UNLOCK</code></td>
+      <td><code>{}</code></td>
+      <td>Clears locked flag, plays unlock audio, enables normal access.</td>
+    </tr>
+    <tr>
+      <td><code>SYNC_CONFIG</code></td>
+      <td><code>{}</code></td>
+      <td>Re-fetches schedule bundle from cloud backend and refreshes slot times.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>7. Companion Caregiver & Mobile App APIs (JWT Authenticated)</h2>
+<table>
+  <thead>
+    <tr>
+      <th style="width: 12%;">Method</th>
+      <th style="width: 38%;">Endpoint</th>
+      <th style="width: 50%;">Purpose</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>POST</code></td>
+      <td><code>/api/v1/iot/devices/validate-code/</code></td>
+      <td>Validates device unique sticker registration code.</td>
+    </tr>
+    <tr>
+      <td><code>POST</code></td>
+      <td><code>/api/v1/iot/devices/link/</code></td>
+      <td>Links provisioned hardware dispenser to caregiver/patient account.</td>
+    </tr>
+    <tr>
+      <td><code>POST</code></td>
+      <td><code>/api/v1/iot/devices/&lt;pk&gt;/dispenser/setup/</code></td>
+      <td>Initializes 4 physical compartments with slot alarm times.</td>
+    </tr>
+    <tr>
+      <td><code>PATCH</code></td>
+      <td><code>/api/v1/iot/devices/&lt;pk&gt;/dispenser/compartments/&lt;num&gt;/time/</code></td>
+      <td>Updates scheduled time (HH:MM in IST) for any compartment.</td>
+    </tr>
+    <tr>
+      <td><code>POST</code></td>
+      <td><code>/api/v1/iot/devices/&lt;pk&gt;/dispenser/compartments/&lt;num&gt;/medicine/add/</code></td>
+      <td>Registers prescribed medicine to a compartment.</td>
+    </tr>
+    <tr>
+      <td><code>POST</code></td>
+      <td><code>/api/v1/iot/devices/&lt;pk&gt;/dispenser/fill/complete/</code></td>
+      <td>Confirms refill, locks in baseline load cell weights.</td>
+    </tr>
+    <tr>
+      <td><code>POST</code></td>
+      <td><code>/api/v1/iot/devices/&lt;pk&gt;/commands/queue/</code></td>
+      <td>Queues arbitrary commands (e.g. <code>DISPENSE_NOW</code>, <code>GATE_LOCK</code>).</td>
+    </tr>
+    <tr>
+      <td><code>POST</code></td>
+      <td><code>/api/v1/iot/dose/caregiver-unlock/</code></td>
+      <td>Remotely unlocks dispenser after missed dose or security lockout.</td>
+    </tr>
+    <tr>
+      <td><code>GET</code></td>
+      <td><code>/api/v1/iot/dose/history/?device_id=&lt;uuid&gt;</code></td>
+      <td>Retrieves historical dose adherence telemetry.</td>
+    </tr>
+    <tr>
+      <td><code>GET</code></td>
+      <td><code>/api/v1/iot/dose/alerts/</code></td>
+      <td>Lists recent missed doses, tampering, and lockout alerts.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>8. End-to-End Dispensing Data Flow</h2>
+<div class="flow-box">
+[Device Boot / RTC Sync]
+  Device &rarr; GET /api/v1/iot/sync/time/ &rarr; RTC DS3231 Calibrated
+  Device &rarr; GET /api/v1/iot/devices/{id}/config/ &rarr; Schedule Bundle Saved in Flash
+  Device &harr; ws://.../ws/iot/device/{id}/ &rarr; Bi-Directional Command Channel Active
+
+[Autonomous Scheduled Dispensing Cycle]
+  1. DS3231 RTC hits Slot Time (e.g. 08:00 IST)
+  2. Device &rarr; POST /api/v1/iot/events/ (DOSE_STARTED)
+  3. Stepper rotates to Compartment 1 (1024 half-steps)
+  4. HX711 reads carousel baseline weight tare
+  5. DFPlayer plays Audio Prompt 1 & Buzzer chimes
+  6. Patient hand approaches (HC-SR04 &le; 15 cm) &rarr; Servo Gate opens (90&deg;)
+  7. Device &rarr; POST /api/v1/iot/events/ (LID_OPENED)
+  8. Hand withdraws &rarr; Servo Gate closes (0&deg;) &rarr; POST (LID_CLOSED)
+  9. Scale settles (3s) &rarr; HX711 reads after-dose weight
+  10. Device &rarr; POST /api/v1/iot/events/weight-reading/
+  11. Backend verifies &Delta;W &rarr; replies dose_status: "taken"
+  12. Device plays Confirmation Track 3; Inventory decremented in database
+</div>
+
+<footer>
+  Aarogyam Intelligent Medication Adherence Monitoring System &bull; Confidential &bull; Generated September 2026
+</footer>
+
+</body>
+</html>

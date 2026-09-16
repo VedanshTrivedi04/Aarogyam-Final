@@ -1,0 +1,22 @@
+.text-loop {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+}
+
+.text-loop-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.text-loop-text {
+  user-select: none;
+  font-family: inherit;
+}
+
+.text-loop-measure {
+  visibility: hidden;
+  pointer-events: none;
+  position: absolute;
+}

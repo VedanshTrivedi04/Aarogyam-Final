@@ -1,16 +1,19 @@
 """
-apps/telegram_bot/models.py — Telegram conversational bot (replaces the
-WhatsApp bot; Telegram doesn't expose a phone number for free, so a session
-starts unlinked and only gets tied to a phone_number once the user shares
-their contact via Telegram's native "Share Phone Number" button).
+apps/telegram_bot/models.py — Telegram conversational bot. Verification is
+by email (matched against User.email, confirmed via a real emailed OTP —
+Telegram has no way to prove email ownership on its own, unlike the native
+phone-contact-share button).
 """
 from django.db import models
 from shared.models import BaseModel
 
 
+TG_LANGUAGES = [('hi', 'Hindi'), ('en', 'English')]
+
 TG_STATES = [
     ('IDLE',                    'Idle'),
-    ('AWAITING_CONTACT',        'Awaiting Phone Share'),
+    ('AWAITING_LANGUAGE',       'Awaiting Language Choice'),
+    ('AWAITING_EMAIL',          'Awaiting Email'),
     ('AWAITING_OTP',            'Awaiting OTP'),
     ('AWAITING_DOSE_RESPONSE',  'Awaiting Dose Response'),
 ]
@@ -23,15 +26,18 @@ TG_INTENTS = [
     ('DOSE_SKIP', 'Dose Skipped'),
     ('HELP',      'Help'),
     ('STATUS',    'Status Request'),
+    ('REPORT',    'Adherence Report'),
+    ('MENU',      'Main Menu'),
     ('UNKNOWN',   'Unknown'),
 ]
 
 
 class TelegramSession(BaseModel):
-    """One session per Telegram chat_id (not a phone number — that's only
-    known after the user shares their contact and gets matched/verified)."""
+    """One session per Telegram chat_id (not an email — that's only known
+    after the user types it and gets matched/verified)."""
     chat_id          = models.CharField(max_length=32, unique=True, db_index=True)
-    phone_number      = models.CharField(max_length=20, null=True, blank=True)
+    email             = models.EmailField(null=True, blank=True)
+    language          = models.CharField(max_length=5, choices=TG_LANGUAGES, default='hi')
     user              = models.ForeignKey('identity.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='telegram_session')
     state             = models.CharField(max_length=30, choices=TG_STATES, default='IDLE')
     state_data        = models.JSONField(default=dict)
